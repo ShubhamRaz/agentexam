@@ -1,6 +1,7 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, JSON, Integer
+from datetime import datetime
+from sqlalchemy import String, Text, ForeignKey, JSON, Integer, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base_class import Base
@@ -82,6 +83,8 @@ class StudyMaterial(Base):
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
     processing_status: Mapped[str] = mapped_column(String(50), default="UPLOADED", nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    processing_error: Mapped[str] = mapped_column(Text, nullable=True)
     
     subject = relationship("Subject", back_populates="materials")
     analysis = relationship("MaterialAnalysis", back_populates="material", uselist=False)

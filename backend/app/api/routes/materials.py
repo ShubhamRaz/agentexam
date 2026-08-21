@@ -143,3 +143,36 @@ async def delete_material(
     success = await material_service.delete_material(db, storage, material_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete material")
+
+from fastapi import BackgroundTasks
+from app.db.session import AsyncSessionLocal
+from app.services.processing import ProcessingOrchestrator
+
+async def run_processing_task(material_id: uuid.UUID):
+    async with AsyncSessionLocal() as db_session:
+        orchestrator = ProcessingOrchestrator(db_session)
+        await orchestrator.process_material_sync(material_id)
+
+@router.post("/{material_id}/process", status_code=status.HTTP_202_ACCEPTED)
+async def process_material(
+    material_id: uuid.UUID,
+    db: SessionDep,
+    background_tasks: BackgroundTasks,
+    current_user: Any = Depends(require_role([RoleType.ADMIN, RoleType.TEACHER])),
+) -> Any:
+    """ Trigger document processing for an uploaded material. """
+    # Verify material exists
+    material = await material_service.get_material(db, material_id)
+    if not material:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
+        
+    if material.processing_status == "PROCESSING":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Material is already processing")
+        
+    if material.processing_status == "PROCESSED":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Material is already processed")
+        
+    # Queue background task
+    background_tasks.add_task(run_processing_task, material_id)
+    
+    return {"message": "Processing started", "material_id": material_id}
