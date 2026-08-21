@@ -1,81 +1,112 @@
-import React, { useEffect, useState } from 'react';
-import { api } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { getMaterials } from '../services/materials';
+import LoadingState from '../components/common/LoadingState';
+import EmptyState from '../components/common/EmptyState';
 
+/**
+ * MaterialsList page — connected to:
+ *   GET /api/v1/materials/
+ *
+ * Note: Students can only view materials. Upload is Admin/Teacher only.
+ * The upload zone from the original design is preserved as a visual component
+ * but triggers an informational alert.
+ */
 const MaterialsList = () => {
-  const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [materials, setMaterials] = useState([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchMaterials = async () => {
-      const data = await api.getMaterials();
-      setMaterials(data);
-      setLoading(false);
+    const fetchData = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await getMaterials({ limit: 50 });
+        setMaterials(data);
+      } catch (err) {
+        setError(err.message || 'Failed to load materials.');
+      } finally {
+        setLoading(false);
+      }
     };
-    fetchMaterials();
+    fetchData();
   }, []);
 
-  if (loading) {
-    return <div className="p-4 text-center text-muted"><i className="fas fa-spinner fa-spin mr-2"></i>Loading materials...</div>;
-  }
+  const getStatusBadge = (status) => {
+    if (!status) return null;
+    const s = status.toUpperCase();
+    const styles = {
+      PROCESSED: { bg: '#dcfce7', color: '#166534', label: 'Analyzed' },
+      PROCESSING: { bg: '#fef3c7', color: '#854d0e', label: 'Processing' },
+      PENDING: { bg: '#f3f4f6', color: '#374151', label: 'Pending' },
+      FAILED: { bg: '#fee2e2', color: '#991b1b', label: 'Failed' },
+    };
+    const style = styles[s] || styles.PENDING;
+    return (
+      <span style={{ background: style.bg, color: style.color, padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '600' }}>
+        {style.label}
+      </span>
+    );
+  };
+
+  if (loading) return <LoadingState message="Loading study materials..." />;
 
   return (
-    <div className="materials-page">
+    <div className="page-container p-4">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h3 className="text-2xl font-bold">Study Materials</h3>
-          <p className="text-muted text-sm mt-1">Upload and analyze syllabus, notes, and PYQs.</p>
+          <h2 className="text-3xl font-bold mb-2">Study Materials</h2>
+          <p className="text-muted text-sm">Browse course materials uploaded by your teachers.</p>
         </div>
-        <button className="btn btn-primary"><i className="fas fa-upload"></i> Upload Material</button>
       </div>
 
-      <div className="grid-2col">
-        {/* Upload Zone */}
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-cloud-upload-alt text-blue-600 mr-2"></i>New Upload</h4>
-          </div>
-          <div className="upload-zone mb-4" onClick={() => alert('File upload simulated.')}>
-            <i className="fas fa-file-upload"></i>
-            <h5>Drag and drop files here</h5>
-            <p>or click to browse from your computer</p>
-            <div className="formats">Supported formats: PDF, DOCX, JPG, PNG (Max 50MB)</div>
-          </div>
-          <p className="text-xs text-light"><i className="fas fa-info-circle mr-1"></i> AI will automatically analyze your materials to update your study plan and exam readiness.</p>
+      {error && (
+        <div className="card p-4 mb-4" style={{ background: '#fee2e2', color: '#991b1b' }}>
+          <i className="fas fa-exclamation-circle mr-2"></i>{error}
         </div>
+      )}
 
-        {/* Uploaded Materials List */}
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-folder-open text-blue-600 mr-2"></i>Your Materials</h4>
-            <button className="link"><i className="fas fa-filter"></i> Filter</button>
-          </div>
-          <div className="flex flex-col gap-3">
-            {materials.map((mat) => (
-              <div key={mat.id} className="flex items-center gap-4 p-3 border border-light rounded-md hover:bg-input transition-colors cursor-pointer">
-                <div className="p-3 bg-blue-100 text-blue-600 rounded-md">
-                  <i className="fas fa-file-pdf text-xl"></i>
-                </div>
-                <div className="flex-1">
-                  <div className="font-semibold text-sm">{mat.name}</div>
-                  <div className="text-xs text-muted flex gap-2 mt-1">
-                    <span>{mat.subject}</span>
-                    <span>•</span>
-                    <span>{mat.date}</span>
+      {!error && materials.length === 0 ? (
+        <EmptyState
+          title="No Materials Found"
+          message="No study materials have been uploaded yet. Check back later or contact your teacher."
+          icon="fa-folder-open"
+        />
+      ) : (
+        <div className="grid-2col">
+          {materials.map((mat) => (
+            <div key={mat.id} className="card p-4 flex flex-col gap-3">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                  <div style={{
+                    width: '40px', height: '40px', borderRadius: '10px',
+                    background: 'var(--bg-input)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'var(--color-primary)', fontSize: '18px'
+                  }}>
+                    <i className="fas fa-file-pdf"></i>
+                  </div>
+                  <div>
+                    <div className="font-medium text-sm" style={{ color: 'var(--text-main)' }}>{mat.title}</div>
+                    <div className="text-xs text-muted">{mat.material_type}</div>
                   </div>
                 </div>
-                <span className={`badge ${
-                  mat.status === 'Analyzed' ? 'badge-success' : 
-                  mat.status === 'Processing' ? 'badge-warning' : 'badge-secondary'
-                }`}>
-                  {mat.status === 'Processing' && <i className="fas fa-circle-notch fa-spin mr-1"></i>}
-                  {mat.status}
-                </span>
-                <button className="btn btn-outline-primary btn-sm"><i className="fas fa-eye"></i></button>
+                {getStatusBadge(mat.processing_status)}
               </div>
-            ))}
-          </div>
+              <div className="mt-auto flex justify-end gap-2">
+                <a
+                  href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/materials/${mat.id}/download`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '6px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'transparent', cursor: 'pointer', textDecoration: 'none', fontSize: '13px', color: 'var(--text-main)' }}
+                >
+                  <i className="fas fa-download mr-1"></i> Download
+                </a>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 };

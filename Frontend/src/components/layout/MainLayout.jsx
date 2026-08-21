@@ -25,6 +25,16 @@ const MainLayout = () => {
         return { title: 'Performance Analytics', subtitle: 'Track your progress and identify weak areas.' };
       case '/study-plan':
         return { title: 'Personalized Study Plan', subtitle: 'Your recommended revision schedule.' };
+      case '/syllabus':
+        return { title: 'Syllabus', subtitle: 'Browse topics and check high probability units.' };
+      case '/pyqs':
+        return { title: 'Previous Year Questions', subtitle: 'Practice past exam questions.' };
+      case '/results':
+        return { title: 'Exam Results', subtitle: 'Review your past performance.' };
+      case '/readiness':
+        return { title: 'Exam Readiness', subtitle: 'Your readiness score and recommended actions.' };
+      case '/profile':
+        return { title: 'Profile & Settings', subtitle: 'Manage your academic details.' };
       default:
         return { title: 'AgentExam', subtitle: 'AI-Powered Exam Preparation' };
     }

@@ -1,39 +1,143 @@
-import React, { useState } from 'react';
-import { api } from '../services/api';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getSubjects } from '../services/syllabus';
+import { createExam, startExam, saveAnswer, submitExam, evaluateExam, getExamResult } from '../services/exams';
+
+/**
+ * TheoryExam page — connected to:
+ *   GET  /api/v1/subjects/ (subject selection)
+ *   POST /api/v1/exams (create exam)
+ *   POST /api/v1/exams/{id}/start (start timer, get questions)
+ *   PUT  /api/v1/exams/{id}/answers/{question_id} (save answer, idempotent)
+ *   POST /api/v1/exams/{id}/submit (finalize)
+ *   POST /api/v1/results/exams/{id}/evaluate (trigger evaluation)
+ *   GET  /api/v1/results/exams/{id}/result (get result)
+ *
+ * The frontend does NOT calculate scores. Backend evaluation is authoritative.
+ */
+
+const DIFFICULTY_OPTIONS = ['EASY', 'MEDIUM', 'HARD'];
 
 const TheoryExam = () => {
-  const [examState, setExamState] = useState('setup'); // setup, active, result
+  const navigate = useNavigate();
+  const [examState, setExamState] = useState('setup'); // setup | active | submitting | result
+  const [subjects, setSubjects] = useState([]);
+  const [config, setConfig] = useState({
+    subject_id: '',
+    difficulty_level: 'MEDIUM',
+    question_count: 10,
+    duration_minutes: 30,
+  });
+
+  const [examId, setExamId] = useState(null);
   const [questions, setQuestions] = useState([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [currentQIndex, setCurrentQIndex] = useState(0);
+  const [savedAnswers, setSavedAnswers] = useState({});
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const startExam = async () => {
+  // Timer state
+  const [timeLeft, setTimeLeft] = useState(0);
+  const timerRef = useRef(null);
+
+  // Load subjects on mount
+  useEffect(() => {
+    getSubjects({ limit: 50 })
+      .then(data => {
+        setSubjects(data);
+        if (data.length > 0) setConfig(c => ({ ...c, subject_id: data[0].id }));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Timer countdown
+  useEffect(() => {
+    if (examState === 'active' && timeLeft > 0) {
+      timerRef.current = setInterval(() => {
+        setTimeLeft(t => {
+          if (t <= 1) {
+            clearInterval(timerRef.current);
+            handleAutoSubmit();
+            return 0;
+          }
+          return t - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [examState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const formatTime = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const handleStartExam = async () => {
+    if (!config.subject_id) return;
     setLoading(true);
-    const data = await api.startTheoryExam();
-    setQuestions(data.questions);
-    setExamState('active');
-    setLoading(false);
+    setError('');
+    try {
+      // Create exam
+      const exam = await createExam(config);
+      // Start exam (begins timer, returns questions)
+      const attempt = await startExam(exam.id);
+      setExamId(exam.id);
+      setQuestions(attempt.questions || []);
+      setTimeLeft((attempt.duration_minutes || config.duration_minutes) * 60);
+      setCurrentQIndex(0);
+      setSavedAnswers({});
+      setExamState('active');
+    } catch (err) {
+      setError(err.message || 'Failed to start exam. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const submitExam = async () => {
+  const handleSaveCurrentAnswer = async (questionId, answerData) => {
+    if (!examId) return;
+    try {
+      await saveAnswer(examId, questionId, { question_id: questionId, ...answerData });
+      setSavedAnswers(prev => ({ ...prev, [questionId]: answerData }));
+    } catch {
+      // Non-blocking — we still allow navigation
+    }
+  };
+
+  const handleAnswerChange = (question, val) => {
+    const answerData = question.question_type === 'MCQ' || question.question_type === 'MULTIPLE_CHOICE'
+      ? { selected_option_id: val }
+      : { answer_text: val };
+    setSavedAnswers(prev => ({ ...prev, [question.id]: answerData }));
+    handleSaveCurrentAnswer(question.id, answerData);
+  };
+
+  const handleSubmitExam = async () => {
+    if (!examId) return;
+    clearInterval(timerRef.current);
+    setExamState('submitting');
     setLoading(true);
-    const resultData = await api.submitExam('ex_123', answers);
-    setResult(resultData);
-    setExamState('result');
-    setLoading(false);
+    try {
+      await submitExam(examId);
+      await evaluateExam(examId);
+      const resultData = await getExamResult(examId);
+      setResult(resultData);
+      setExamState('result');
+    } catch (err) {
+      setError(err.message || 'Failed to submit exam. Please try again.');
+      setExamState('active');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleAnswerChange = (val) => {
-    setAnswers({ ...answers, [currentQuestionIndex]: val });
+  const handleAutoSubmit = async () => {
+    await handleSubmitExam();
   };
 
-  if (loading) {
-    return <div className="p-8 text-center text-muted"><i className="fas fa-spinner fa-spin mr-2"></i>Processing...</div>;
-  }
-
+  // --- Setup Screen ---
   if (examState === 'setup') {
     return (
       <div className="max-w-2xl mx-auto mt-8">
@@ -41,41 +145,69 @@ const TheoryExam = () => {
           <div className="card-header">
             <h4><i className="fas fa-cog text-blue-600 mr-2"></i>Mock Test Setup</h4>
           </div>
-          <div>
-            <div className="p-4 bg-blue-100 text-blue-600 rounded-md flex items-start gap-3 mb-6">
-              <i className="fas fa-exclamation-triangle mt-1 flex-shrink-0"></i>
-              <div>
-                <h4 className="font-bold text-sm">Instructions</h4>
-                <p className="text-xs mt-1 leading-relaxed">This adaptive mock test contains MCQs, short answers, and long answers based on your Computer Networks syllabus. The difficulty will adapt based on your performance.</p>
+          <div className="p-6">
+            {error && (
+              <div className="p-4 mb-4 rounded" style={{ background: '#fee2e2', color: '#991b1b' }}>
+                <i className="fas fa-exclamation-circle mr-2"></i>{error}
               </div>
-            </div>
-            
+            )}
+
             <div className="form-group">
               <label className="form-label">Subject</label>
-              <select className="form-select" disabled>
-                <option>Computer Networks</option>
+              <select
+                className="form-select"
+                value={config.subject_id}
+                onChange={e => setConfig(c => ({ ...c, subject_id: e.target.value }))}
+              >
+                {subjects.length === 0
+                  ? <option value="">Loading subjects...</option>
+                  : subjects.map(s => <option key={s.id} value={s.id}>{s.name} ({s.code})</option>)
+                }
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Difficulty</label>
+              <select
+                className="form-select"
+                value={config.difficulty_level}
+                onChange={e => setConfig(c => ({ ...c, difficulty_level: e.target.value }))}
+              >
+                {DIFFICULTY_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
 
             <div className="grid-2col" style={{ marginBottom: '16px' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Question Count</label>
-                <select className="form-select">
-                  <option>20 Questions</option>
-                  <option>40 Questions</option>
+                <label className="form-label">Number of Questions</label>
+                <select
+                  className="form-select"
+                  value={config.question_count}
+                  onChange={e => setConfig(c => ({ ...c, question_count: Number(e.target.value) }))}
+                >
+                  {[5, 10, 20].map(n => <option key={n} value={n}>{n} Questions</option>)}
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Time Limit</label>
-                <select className="form-select">
-                  <option>30 Minutes</option>
-                  <option>60 Minutes</option>
+                <label className="form-label">Duration</label>
+                <select
+                  className="form-select"
+                  value={config.duration_minutes}
+                  onChange={e => setConfig(c => ({ ...c, duration_minutes: Number(e.target.value) }))}
+                >
+                  {[15, 30, 45, 60].map(m => <option key={m} value={m}>{m} Minutes</option>)}
                 </select>
               </div>
             </div>
 
-            <button className="btn btn-primary w-full mt-4" onClick={startExam}>
-              <i className="fas fa-play"></i> Start Mock Test
+            <button
+              className="btn btn-primary w-full mt-4"
+              onClick={handleStartExam}
+              disabled={loading || !config.subject_id}
+            >
+              {loading
+                ? <><i className="fas fa-spinner fa-spin mr-2"></i>Creating Exam...</>
+                : <><i className="fas fa-play mr-2"></i>Start Mock Test</>}
             </button>
           </div>
         </div>
@@ -83,67 +215,100 @@ const TheoryExam = () => {
     );
   }
 
+  // --- Submitting Screen ---
+  if (examState === 'submitting') {
+    return (
+      <div className="p-8 text-center text-muted">
+        <i className="fas fa-spinner fa-spin mr-2"></i>
+        Submitting and evaluating your exam. Please wait...
+      </div>
+    );
+  }
+
+  // --- Active Exam Screen ---
   if (examState === 'active') {
-    const currentQ = questions[currentQuestionIndex];
+    const currentQ = questions[currentQIndex];
+    const savedAnswer = savedAnswers[currentQ?.id] || {};
+
     return (
       <div className="exam-interface max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="font-bold text-lg"><i className="fas fa-question-circle text-blue-600 mr-2"></i>Question {currentQuestionIndex + 1} of {questions.length}</h3>
-          <span className="badge badge-warning text-sm px-4 py-2"><i className="far fa-clock mr-1"></i> Time Left: 28:45</span>
+          <h3 className="font-bold text-lg">
+            <i className="fas fa-question-circle text-blue-600 mr-2"></i>
+            Question {currentQIndex + 1} of {questions.length}
+          </h3>
+          <span className={`badge text-sm px-4 py-2 ${timeLeft <= 300 ? 'badge-danger' : 'badge-warning'}`}>
+            <i className="far fa-clock mr-1"></i> {formatTime(timeLeft)}
+          </span>
         </div>
 
-        <div className="card mb-6">
-          <div className="mb-4 flex justify-between">
-            <span className="badge badge-secondary">{currentQ.topic}</span>
-            <span className="badge badge-primary">{currentQ.type.toUpperCase()}</span>
+        {error && (
+          <div className="p-3 mb-4 rounded" style={{ background: '#fee2e2', color: '#991b1b', fontSize: '14px' }}>
+            <i className="fas fa-exclamation-circle mr-2"></i>{error}
           </div>
-          <h4 className="text-lg font-medium mb-6 text-main leading-relaxed">{currentQ.text}</h4>
+        )}
 
-          {currentQ.type === 'mcq' && (
-            <div className="flex flex-col gap-3">
-              {currentQ.options.map((opt, idx) => (
-                <label key={idx} className={`p-4 border rounded-md cursor-pointer flex items-center gap-3 transition-colors ${answers[currentQuestionIndex] === idx ? 'border-l-primary bg-blue-100 border-primary border-l-4' : 'border-light hover:bg-input'}`}>
-                  <input 
-                    type="radio" 
-                    name={`q-${currentQuestionIndex}`} 
-                    checked={answers[currentQuestionIndex] === idx}
-                    onChange={() => handleAnswerChange(idx)}
-                    className="w-4 h-4"
-                  />
-                  <span className="font-medium text-sm">{opt}</span>
-                </label>
-              ))}
+        {currentQ && (
+          <div className="card mb-6">
+            <div className="mb-4 flex justify-between">
+              <span className="badge badge-secondary">{currentQ.question_type || 'MCQ'}</span>
+              <span className="badge badge-primary">{currentQ.marks} mark(s)</span>
             </div>
-          )}
+            <h4 className="text-lg font-medium mb-6 text-main leading-relaxed">{currentQ.question_text}</h4>
 
-          {(currentQ.type === 'short' || currentQ.type === 'long') && (
-            <textarea 
-              className="form-input min-h-[150px]"
-              placeholder="Type your answer here..."
-              value={answers[currentQuestionIndex] || ''}
-              onChange={(e) => handleAnswerChange(e.target.value)}
-            />
-          )}
-        </div>
+            {/* MCQ Options */}
+            {(currentQ.question_type === 'MCQ' || currentQ.question_type === 'MULTIPLE_CHOICE') && currentQ.options && (
+              <div className="flex flex-col gap-3">
+                {currentQ.options.map((opt) => (
+                  <label
+                    key={opt.id}
+                    className={`p-4 border rounded-md cursor-pointer flex items-center gap-3 transition-colors ${
+                      savedAnswer.selected_option_id === opt.id
+                        ? 'border-l-primary bg-blue-100 border-primary border-l-4'
+                        : 'border-light hover:bg-input'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name={`q-${currentQ.id}`}
+                      checked={savedAnswer.selected_option_id === opt.id}
+                      onChange={() => handleAnswerChange(currentQ, opt.id)}
+                      className="w-4 h-4"
+                    />
+                    <span className="font-medium text-sm">{opt.text}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* Short/Long answer */}
+            {(currentQ.question_type === 'SHORT_ANSWER' || currentQ.question_type === 'LONG_ANSWER' || currentQ.question_type === 'DESCRIPTIVE') && (
+              <textarea
+                className="form-input"
+                style={{ minHeight: currentQ.question_type === 'LONG_ANSWER' ? '200px' : '120px' }}
+                placeholder="Type your answer here..."
+                value={savedAnswer.answer_text || ''}
+                onChange={e => handleAnswerChange(currentQ, e.target.value)}
+              />
+            )}
+          </div>
+        )}
 
         <div className="flex justify-between">
-          <button 
-            className="btn btn-secondary" 
-            disabled={currentQuestionIndex === 0}
-            onClick={() => setCurrentQuestionIndex(i => i - 1)}
+          <button
+            className="btn btn-secondary"
+            disabled={currentQIndex === 0}
+            onClick={() => setCurrentQIndex(i => i - 1)}
           >
             <i className="fas fa-chevron-left"></i> Previous
           </button>
-          
-          {currentQuestionIndex < questions.length - 1 ? (
-            <button 
-              className="btn btn-primary"
-              onClick={() => setCurrentQuestionIndex(i => i + 1)}
-            >
+
+          {currentQIndex < questions.length - 1 ? (
+            <button className="btn btn-primary" onClick={() => setCurrentQIndex(i => i + 1)}>
               Next Question <i className="fas fa-chevron-right"></i>
             </button>
           ) : (
-            <button className="btn btn-success" onClick={submitExam}>
+            <button className="btn btn-success" onClick={handleSubmitExam} disabled={loading}>
               <i className="fas fa-check-double"></i> Submit Exam
             </button>
           )}
@@ -152,28 +317,55 @@ const TheoryExam = () => {
     );
   }
 
-  if (examState === 'result') {
+  // --- Result Screen ---
+  if (examState === 'result' && result) {
+    const pct = Math.round(result.percentage);
+    const scoreColor = pct >= 80 ? '#22c55e' : pct >= 60 ? '#eab308' : '#ef4444';
     return (
       <div className="max-w-3xl mx-auto mt-8">
         <div className="card text-center mb-6 py-8">
-          <i className="fas fa-check-circle text-6xl text-success mb-4"></i>
+          <i className={`fas fa-check-circle text-6xl mb-4 ${pct >= 60 ? 'text-success' : 'text-danger'}`}></i>
           <h2 className="text-2xl font-bold mb-2">Test Completed!</h2>
-          <div className="text-5xl font-extrabold text-blue-600 mb-6">{result.score} <span className="text-2xl text-light">/ {result.totalMarks}</span></div>
-          <p className="text-muted max-w-lg mx-auto bg-input p-4 rounded-md border border-light leading-relaxed">{result.feedback}</p>
+          <div className="text-5xl font-extrabold mb-2" style={{ color: scoreColor }}>
+            {result.obtained_marks}
+            <span className="text-2xl text-light"> / {result.total_marks}</span>
+          </div>
+          <div className="text-2xl font-bold mb-2" style={{ color: scoreColor }}>{pct}%</div>
+          {result.grade && <div className="badge badge-secondary mb-4">Grade: {result.grade}</div>}
+          <div className={`badge ${result.pass_status ? 'badge-success' : 'badge-danger'} px-4 py-2`}>
+            {result.pass_status ? 'PASSED' : 'NOT PASSED'}
+          </div>
         </div>
 
-        <h3 className="font-bold text-lg mb-4"><i className="fas fa-search text-warning mr-2"></i>Areas for Improvement</h3>
-        <div className="grid-2col">
-          {result.weakTopics.map((topic, i) => (
-            <div className="card flex items-center justify-between" key={i}>
-              <span className="font-medium text-sm"><i className="fas fa-exclamation-circle text-danger mr-2"></i>{topic}</span>
-              <button className="btn btn-outline-primary btn-sm">Review <i className="fas fa-arrow-right ml-1"></i></button>
+        {result.question_results?.length > 0 && (
+          <>
+            <h3 className="font-bold text-lg mb-4">
+              <i className="fas fa-list-check text-blue-600 mr-2"></i>Question Breakdown
+            </h3>
+            <div className="flex flex-col gap-3 mb-6">
+              {result.question_results.slice(0, 5).map((qr, i) => (
+                <div key={i} className="card p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-main)', flex: 1, marginRight: '12px' }}>
+                      {qr.question_text}
+                    </p>
+                    <span className="text-sm font-bold" style={{ color: qr.evaluation?.marks_obtained > 0 ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>
+                      {qr.evaluation?.marks_obtained ?? 0} / {qr.marks} marks
+                    </span>
+                  </div>
+                  {qr.evaluation?.feedback && (
+                    <p className="text-xs text-muted mt-1">{qr.evaluation.feedback}</p>
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        
-        <div className="text-center mt-8">
-          <button className="btn btn-secondary" onClick={() => setExamState('setup')}><i className="fas fa-home"></i> Back to Exams</button>
+          </>
+        )}
+
+        <div className="text-center">
+          <button className="btn btn-secondary" onClick={() => { setExamState('setup'); setResult(null); setQuestions([]); }}>
+            <i className="fas fa-home"></i> Back to Setup
+          </button>
         </div>
       </div>
     );

@@ -1,72 +1,56 @@
-import { 
-  mockDashboardData, 
-  mockUser, 
-  mockSyllabusData, 
-  mockExamQuestions,
-  mockMaterials,
-  mockPerformanceData
-} from '../data/mockData';
+/**
+ * Legacy api.js — This file now delegates to the real service layer.
+ * 
+ * IMPORTANT: This file is kept for backward compatibility only.
+ * All new code should import directly from the services/ directory:
+ *   import { getPerformanceOverview } from './performance';
+ *   import { getResults } from './results';
+ *   etc.
+ *
+ * Mock data is NO LONGER returned by this module.
+ * Real API calls go through client.js → FastAPI backend.
+ */
 
-// Helper to simulate network latency
-const delay = (ms = 800) => new Promise(resolve => setTimeout(resolve, ms));
+import { getMe } from './auth';
+import { getMaterials } from './materials';
+import { getSubjectUnits } from './syllabus';
+import { createExam, startExam, submitExam as submitExamService, evaluateExam, getExamResult } from './exams';
+import { getPerformanceOverview } from './performance';
 
 export const api = {
-  getUser: async () => {
-    await delay(300);
-    return mockUser;
-  },
-  
-  getDashboard: async () => {
-    await delay();
-    return mockDashboardData;
-  },
+  /** @deprecated Use getMe() from services/auth.js instead */
+  getUser: () => getMe(),
 
-  getMaterials: async () => {
-    await delay(500);
-    return mockMaterials;
-  },
+  /** @deprecated Use getMaterials() from services/materials.js instead */
+  getMaterials: () => getMaterials({ limit: 20 }),
 
-  uploadMaterial: async (file) => {
-    await delay(1500);
-    // Simulate returning a newly added material
-    return {
-      id: Date.now(),
-      name: file.name,
-      type: 'Unknown',
-      subject: 'Pending Analysis',
-      status: 'Processing',
-      date: 'Just now'
-    };
-  },
+  /** @deprecated Use getSubjectUnits() from services/syllabus.js instead */
+  getSyllabusAnalysis: (subjectId) => getSubjectUnits(subjectId),
 
-  getSyllabusAnalysis: async (subjectId) => {
-    await delay(1000);
-    return mockSyllabusData;
-  },
+  /** @deprecated Use getPerformanceOverview() from services/performance.js instead */
+  getPerformanceData: () => getPerformanceOverview().then(data => {
+    // Map to old chart-friendly format
+    const topics = [...(data.strong_topics || []), ...(data.weak_topics || [])];
+    return topics.map(t => ({
+      name: t.topic_name,
+      score: Math.round(t.accuracy),
+      accuracy: Math.round(t.accuracy),
+    }));
+  }),
 
+  /** @deprecated Use services/exams.js directly */
   startTheoryExam: async (config) => {
-    await delay(1200);
-    return {
-      examId: 'ex_' + Date.now(),
-      questions: mockExamQuestions
-    };
+    const exam = await createExam(config || { subject_id: null, question_count: 10, duration_minutes: 30 });
+    const attempt = await startExam(exam.id);
+    return { examId: exam.id, questions: attempt.questions };
   },
 
-  submitExam: async (examId, answers) => {
-    await delay(2000);
-    // Simulate evaluation response
-    return {
-      score: 75,
-      totalMarks: 100,
-      feedback: "Good understanding of IP addressing, but need to review Routing Algorithms in more depth. Your explanation of OSPF was missing key details about Link State Packets.",
-      weakTopics: ['Routing Algorithms']
-    };
+  /** @deprecated Use services/exams.js directly */
+  submitExam: async (examId) => {
+    await submitExamService(examId);
+    await evaluateExam(examId);
+    return getExamResult(examId);
   },
-
-  getPerformanceData: async () => {
-    await delay(600);
-    return mockPerformanceData;
-  }
 };
 
 export default api;

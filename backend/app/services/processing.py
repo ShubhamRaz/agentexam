@@ -58,6 +58,10 @@ class ProcessingOrchestrator:
             # 4. Ingest to DB
             await self.ingestion.ingest(material, extracted_data)
 
+            # 4.5. Index for RAG
+            from app.services.rag import rag_service
+            await rag_service.index_document(self.db, material, text)
+
             # 5. Mark Complete
             material.processing_status = "PROCESSED"
             material.processed_at = datetime.utcnow()

@@ -111,3 +111,48 @@ export const mockPerformanceData = [
   { name: 'Test 4', score: 75, accuracy: 80 },
   { name: 'Test 5', score: 78, accuracy: 82 }
 ];
+
+export const mockPYQs = [
+  { id: 'pyq-1', subject: 'Computer Networks', year: '2025', text: 'Explain the OSI Reference Model.', marks: 10, type: 'Long Answer' },
+  { id: 'pyq-2', subject: 'Computer Networks', year: '2024', text: 'What is subnetting? Calculate the subnet mask for a /26 network.', marks: 5, type: 'Short Answer' },
+  { id: 'pyq-3', subject: 'Operating Systems', year: '2024', text: 'Describe the Banker\'s algorithm for deadlock avoidance.', marks: 15, type: 'Long Answer' }
+];
+
+export const mockResultsList = [
+  { id: 'res-1', examName: 'CN Full Mock Test 1', date: '2026-08-10', score: 65, maxMarks: 100, percentage: 65, status: 'PASSED' },
+  { id: 'res-2', examName: 'OS Midterm', date: '2026-07-20', score: 35, maxMarks: 50, percentage: 70, status: 'PASSED' },
+  { id: 'res-3', examName: 'DBMS Quiz', date: '2026-06-15', score: 9, maxMarks: 20, percentage: 45, status: 'NEEDS IMPROVEMENT' }
+];
+
+export const mockExperiments = [
+  { id: 'exp-1', title: 'Experiment 1: Socket Programming', subject: 'Computer Networks Lab', status: 'COMPLETED' },
+  { id: 'exp-2', title: 'Experiment 2: Distance Vector Routing Simulation', subject: 'Computer Networks Lab', status: 'PENDING' },
+  { id: 'exp-3', title: 'Experiment 3: WireShark Packet Analysis', subject: 'Computer Networks Lab', status: 'IN_PROGRESS' }
+];
+
+export const mockReadiness = {
+  score: 78,
+  status: 'HIGH',
+  factors: [
+    { name: 'Overall Accuracy', value: 78 },
+    { name: 'Topics Attempted', value: 24 }
+  ],
+  riskAreas: [
+    { topic_name: 'Subnetting & VLSM', risk_level: 'HIGH', reason: 'Low accuracy in recent tests' }
+  ],
+  recommendations: [
+    { priority: 'HIGH', message: 'Review Subnetting concepts and practice numericals.', topic_name: 'Subnetting & VLSM' }
+  ]
+};
+
+export const mockProfile = {
+  name: 'Shubham Raj',
+  email: 'shubham@example.com',
+  program: 'B.Tech Computer Science',
+  semester: 'Semester 6',
+  joined: 'August 2021',
+  preferences: {
+    theme: 'Light',
+    notifications: true
+  }
+};

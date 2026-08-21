@@ -1,7 +1,16 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
+  const { user } = useAuth();
+
+  const displayName = user?.name || 'Student';
+  const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const roleLabel = user?.role
+    ? `${user.role.charAt(0)}${user.role.slice(1).toLowerCase()} Account`
+    : 'Student Account';
+
   return (
     <>
       <div className={`sidebar ${isOpen ? 'open' : ''}`}>
@@ -23,9 +32,17 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         <div className="nav-section">Preparation</div>
         <NavLink to="/materials" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <i className="fas fa-upload"></i>
-          <span>Materials & Analysis</span>
+          <span>Materials &amp; Analysis</span>
         </NavLink>
-        
+        <NavLink to="/syllabus" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <i className="fas fa-book"></i>
+          <span>Syllabus</span>
+        </NavLink>
+        <NavLink to="/pyqs" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <i className="fas fa-history"></i>
+          <span>PYQs</span>
+        </NavLink>
+
         <div className="nav-section">Evaluation</div>
         <NavLink to="/exams" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <i className="fas fa-file-alt"></i>
@@ -33,7 +50,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         </NavLink>
         <NavLink to="/practical" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <i className="fas fa-flask"></i>
-          <span>Practical & Lab</span>
+          <span>Practical &amp; Lab</span>
         </NavLink>
         <NavLink to="/viva" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <i className="fas fa-microphone-alt"></i>
@@ -45,19 +62,27 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
           <i className="fas fa-chart-line"></i>
           <span>Performance</span>
         </NavLink>
+        <NavLink to="/results" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <i className="fas fa-clipboard-check"></i>
+          <span>Results</span>
+        </NavLink>
+        <NavLink to="/readiness" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <i className="fas fa-brain"></i>
+          <span>Readiness</span>
+        </NavLink>
 
         <div className="sidebar-footer">
-          <div className="user-card">
-            <div className="user-avatar">SR</div>
+          <NavLink to="/profile" className="user-card block" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div className="user-avatar">{initials}</div>
             <div className="user-info">
-              <div className="name">Shubham Raj</div>
-              <div className="role">B.Tech CS - Sem 6</div>
+              <div className="name">{displayName}</div>
+              <div className="role">{roleLabel}</div>
             </div>
-          </div>
+          </NavLink>
         </div>
       </div>
-      <div 
-        className={`overlay ${isOpen ? 'open' : ''}`} 
+      <div
+        className={`overlay ${isOpen ? 'open' : ''}`}
         onClick={toggleSidebar}
       ></div>
     </>

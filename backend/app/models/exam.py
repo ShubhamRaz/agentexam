@@ -10,11 +10,13 @@ class TestType(str, enum.Enum):
     THEORY = "THEORY"
     PRACTICAL = "PRACTICAL"
     ADAPTIVE = "ADAPTIVE"
+    VIVA = "VIVA"
 
 class ExamStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     IN_PROGRESS = "IN_PROGRESS"
     SUBMITTED = "SUBMITTED"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
     EVALUATED = "EVALUATED"
     EXPIRED = "EXPIRED"
 
@@ -68,6 +70,7 @@ class MockTest(Base):
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     
     questions = relationship("Question", secondary=mock_test_question, back_populates="tests")
+    experiments = relationship("Experiment", secondary="mock_test_experiment", back_populates="tests")
     result = relationship("Result", back_populates="test", uselist=False)
 
 class Question(Base):
@@ -130,6 +133,7 @@ class Result(Base):
     obtained_marks: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
     percentage: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
     grade: Mapped[str] = mapped_column(String(20), nullable=True)
+    pass_status: Mapped[bool] = mapped_column(default=False, nullable=False)
     readiness_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=True)
     
     test = relationship("MockTest", back_populates="result")
