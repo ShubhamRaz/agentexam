@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     AI_MODEL: str = "gpt-4-turbo"
     AI_BASE_URL: str = ""
     AI_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
+
+    @property
+    def get_ai_api_key(self) -> str:
+        return self.AI_API_KEY or self.GROQ_API_KEY
     
     # RAG Configuration
     EMBEDDING_PROVIDER: str = "mock"

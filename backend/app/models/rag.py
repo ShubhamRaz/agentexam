@@ -21,6 +21,9 @@ class DocumentChunk(Base):
     
     # academic context filters
     subject_id = Column(UUID(as_uuid=True), ForeignKey("subject.id", ondelete="CASCADE"), nullable=False)
+
+    # owner filter — used to scope RAG retrieval per student (SRS §5.3)
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
     
     metadata_ = Column("metadata", JSONB, nullable=True)  # Using metadata_ to avoid conflict with SQLAlchemy's metadata
     
@@ -28,3 +31,5 @@ class DocumentChunk(Base):
 
     document = relationship("StudyMaterial", foreign_keys=[document_id])
     subject = relationship("Subject", foreign_keys=[subject_id])
+    uploader = relationship("User", foreign_keys=[uploaded_by])
+

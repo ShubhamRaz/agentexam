@@ -1,7 +1,7 @@
 import uuid
 import random
 from typing import List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -96,7 +96,7 @@ class ExamEngineService:
             
         # Start server-side timer
         exam.status = ExamStatus.IN_PROGRESS
-        exam.started_at = datetime.utcnow()
+        exam.started_at = datetime.now(timezone.utc)
         exam.expires_at = exam.started_at + timedelta(minutes=exam.duration_minutes)
         
         await db.commit()
@@ -120,10 +120,10 @@ class ExamEngineService:
             raise HTTPException(status_code=400, detail="Exam is not currently in progress")
             
         # Verify timer
-        if datetime.utcnow() > exam.expires_at:
+        if datetime.now(timezone.utc) > exam.expires_at:
             # Auto-submit if expired
             exam.status = ExamStatus.EXPIRED
-            exam.submitted_at = datetime.utcnow()
+            exam.submitted_at = datetime.now(timezone.utc)
             await db.commit()
             raise HTTPException(status_code=403, detail="Exam time has expired")
             
@@ -143,7 +143,7 @@ class ExamEngineService:
         if answer:
             answer.selected_option_id = obj_in.selected_option_id
             answer.answer_text = obj_in.answer_text
-            answer.answered_at = datetime.utcnow()
+            answer.answered_at = datetime.now(timezone.utc)
         else:
             answer = Answer(
                 student_id=student_id,
@@ -165,7 +165,7 @@ class ExamEngineService:
             raise HTTPException(status_code=400, detail="Exam cannot be submitted in its current state")
             
         exam.status = ExamStatus.SUBMITTED
-        exam.submitted_at = datetime.utcnow()
+        exam.submitted_at = datetime.now(timezone.utc)
         
         await db.commit()
         await db.refresh(exam)

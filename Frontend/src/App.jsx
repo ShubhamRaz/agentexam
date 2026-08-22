@@ -12,6 +12,7 @@ import Register from './pages/Register';
 // Protected pages
 import Dashboard from './pages/Dashboard';
 import MaterialsList from './pages/MaterialsList';
+import UploadMaterial from './pages/UploadMaterial';
 import Syllabus from './pages/Syllabus';
 import PYQs from './pages/PYQs';
 import TheoryExam from './pages/TheoryExam';
@@ -42,6 +43,7 @@ function App() {
         >
           <Route index element={<Dashboard />} />
           <Route path="materials" element={<MaterialsList />} />
+          <Route path="upload-material" element={<UploadMaterial />} />
           <Route path="syllabus" element={<Syllabus />} />
           <Route path="pyqs" element={<PYQs />} />
           <Route path="exams" element={<TheoryExam />} />

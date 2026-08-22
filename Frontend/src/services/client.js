@@ -62,10 +62,16 @@ function mapErrorMessage(status, serverMessage) {
 export async function request(endpoint, options = {}, authenticated = true) {
   const url = `${BASE_URL}${API_PREFIX}${endpoint}`;
 
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {}),
   };
+
+  if (isFormData && headers['Content-Type']) {
+    delete headers['Content-Type'];
+  }
 
   if (authenticated) {
     const token = tokenStore.get();
@@ -139,12 +145,8 @@ export const apiClient = {
     request(endpoint, { method: 'POST', body: JSON.stringify(body) }, false),
 
   /** Upload file as multipart/form-data */
-  upload: (endpoint, formData) => {
-    const token = tokenStore.get();
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return request(endpoint, { method: 'POST', headers, body: formData }, false);
-  },
+  upload: (endpoint, formData) =>
+    request(endpoint, { method: 'POST', body: formData }, true),
 
   /** OAuth2 login (application/x-www-form-urlencoded) */
   loginForm: (username, password) => {

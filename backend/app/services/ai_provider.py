@@ -131,11 +131,9 @@ class OpenAICompatibleProvider(AIProvider):
         system_prompt = (
             "You are an expert exam question generator for a university platform. "
             "Generate questions matching the requested type, difficulty, and academic context. "
-            "You MUST output valid JSON conforming to the requested schema. Do not output anything other than JSON."
+            f"You MUST output valid JSON conforming exactly to this JSON schema: {AIQuestionListSchema.model_json_schema()} "
+            "Do not output anything other than JSON."
         )
-        
-        # In a real implementation we would define the JSON schema parameter for Structured Outputs,
-        # but for this abstract implementation we'll request JSON format and validate via Pydantic.
         
         response = await self.client.post("/chat/completions", json={
             "model": self.model_name,
@@ -164,7 +162,8 @@ class OpenAICompatibleProvider(AIProvider):
             "You are an expert university examiner. You will be provided with a student's answer, "
             "an expected answer or key concepts, and the maximum marks. "
             "Evaluate the student's answer fairly but strictly. Provide a score and constructive feedback. "
-            "You MUST output valid JSON. Do not output anything other than JSON."
+            f"You MUST output valid JSON conforming exactly to this JSON schema: {AIEvaluationSchema.model_json_schema()} "
+            "Do not output anything other than JSON."
         )
         
         prompt = f"Expected Answer/Concepts:\n{expected_answer}\n\n"

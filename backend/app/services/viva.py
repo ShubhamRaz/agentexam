@@ -1,7 +1,7 @@
 import uuid
 import random
 from typing import List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -97,11 +97,13 @@ class VivaService:
             
         # Start server-side timer
         session.status = ExamStatus.IN_PROGRESS
-        session.started_at = datetime.utcnow()
+        session.started_at = datetime.now(timezone.utc)
         session.expires_at = session.started_at + timedelta(minutes=session.duration_minutes)
         
         await db.commit()
-        await db.refresh(session)
+        # To avoid MissingGreenlet error when FastAPI serializes the response,
+        # we re-fetch the session with eager loading instead of a generic refresh
+        session = await self.get_session(db, session_id, student_id)
         
         return session
         
@@ -121,9 +123,9 @@ class VivaService:
         if session.status != ExamStatus.IN_PROGRESS:
             raise HTTPException(status_code=400, detail="Session is not currently in progress")
             
-        if datetime.utcnow() > session.expires_at:
+        if datetime.now(timezone.utc) > session.expires_at:
             session.status = ExamStatus.EXPIRED
-            session.submitted_at = datetime.utcnow()
+            session.submitted_at = datetime.now(timezone.utc)
             await db.commit()
             raise HTTPException(status_code=403, detail="Session time has expired")
             
@@ -140,7 +142,7 @@ class VivaService:
         
         if answer:
             answer.answer_text = obj_in.answer_text
-            answer.answered_at = datetime.utcnow()
+            answer.answered_at = datetime.now(timezone.utc)
         else:
             answer = Answer(
                 student_id=student_id,
@@ -151,7 +153,11 @@ class VivaService:
             db.add(answer)
             
         await db.commit()
-        await db.refresh(answer)
+        await db.commit()
+        # Re-fetch with eager loading to prevent MissingGreenlet
+        stmt = select(Answer).where(Answer.id == answer.id).options(selectinload(Answer.evaluation))
+        result = await db.execute(stmt)
+        answer = result.scalars().first()
         return answer
 
     async def submit_session(self, db: AsyncSession, session_id: uuid.UUID, student_id: uuid.UUID) -> MockTest:
@@ -161,7 +167,7 @@ class VivaService:
             raise HTTPException(status_code=400, detail="Session cannot be submitted in its current state")
             
         session.status = ExamStatus.SUBMITTED
-        session.submitted_at = datetime.utcnow()
+        session.submitted_at = datetime.now(timezone.utc)
         
         await db.commit()
         await db.refresh(session)

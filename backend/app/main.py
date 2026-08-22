@@ -6,9 +6,14 @@ from app.core.config import settings
 from app.api.routes import api_router
 
 # Setup logging
+import logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("backend_debug.log"),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 

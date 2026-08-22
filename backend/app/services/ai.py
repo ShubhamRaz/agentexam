@@ -23,7 +23,7 @@ class AIService:
         self.provider = get_ai_provider(
             provider_type=settings.AI_PROVIDER,
             model_name=settings.AI_MODEL,
-            api_key=settings.AI_API_KEY,
+            api_key=settings.get_ai_api_key,
             base_url=settings.AI_BASE_URL
         )
 
@@ -81,13 +81,14 @@ class AIService:
                 
                 # We could fetch MaterialAnalysis here to feed PYQ trends, but sticking to basic context for now.
                 
-                # Fetch RAG context
+                # Fetch RAG context scoped to user's materials
                 from app.services.rag import rag_service
                 retrieved_chunks = await rag_service.search(
                     db=db, 
                     query=f"Generate {job.question_type.value} questions on {topic.name if topic else subject.name}", 
                     subject_id=job.subject_id, 
-                    top_k=5
+                    top_k=5,
+                    uploader_id=job.created_by
                 )
                 rag_context = rag_service.build_context(retrieved_chunks)
                 

@@ -1,11 +1,9 @@
 import { apiClient } from './client';
 
-/** Materials service — reads materials from /api/v1/materials/
- *  Note: Upload is Admin/Teacher only. Students can only read.
- */
-
 /**
- * List materials, optionally filtering by subject.
+ * List materials.
+ * Students automatically see only their own uploads (enforced server-side).
+ * Admins/teachers see all.
  * GET /api/v1/materials/
  */
 export async function getMaterials({ subjectId, materialType, skip = 0, limit = 20 } = {}) {
@@ -21,6 +19,25 @@ export async function getMaterials({ subjectId, materialType, skip = 0, limit = 
  */
 export async function getMaterial(materialId) {
   return apiClient.get(`/materials/${materialId}`);
+}
+
+/**
+ * Upload a new academic material (students upload their own data).
+ * POST /api/v1/materials/upload  (multipart/form-data)
+ *
+ * @param {object} opts
+ * @param {string}   opts.title        Human-readable document name
+ * @param {string}   opts.materialType One of: SYLLABUS, LAB_MANUAL, PYQ, NOTES, OTHER
+ * @param {string}   opts.subjectId    UUID of the subject
+ * @param {File}     opts.file         The file to upload
+ */
+export async function uploadMaterial({ title, materialType, subjectId, file }) {
+  const formData = new FormData();
+  formData.append('title', title);
+  formData.append('material_type', materialType);
+  formData.append('subject_id', subjectId);
+  formData.append('file', file);
+  return apiClient.upload('/materials/upload', formData);
 }
 
 /**

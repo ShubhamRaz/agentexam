@@ -1,24 +1,24 @@
 # AGENTEXAM — PROJECT TASK LIST
 
 ## PHASE 1 — DATA
-- [ ] **Task 1 — DATA COLLECTION**
-  - Collect current-semester theory syllabus
-  - Collect practical/lab syllabus
-  - Collect available PYQs
-  - Include previous-year academic material where possible
-  - Organize files subject-wise
-- [ ] **Task 2 — DATA PROCESSING**
-  - Extract text from documents
-  - OCR scanned documents
-  - Clean extracted data
-  - Identify subjects, units, topics
-  - Extract individual PYQs
-  - Structure processed data
-- [ ] **Task 3 — DATA ANALYSIS**
-  - Analyze PYQ frequency and topic frequency
-  - Identify important topics
-  - Calculate topic/unit weightage
-  - Identify question patterns
+- [x] **Task 1 — DATA COLLECTION**
+  - [x] Collect current-semester theory syllabus
+  - [x] Collect practical/lab syllabus
+  - [x] Collect available PYQs
+  - [x] Include previous-year academic material where possible
+  - [x] Organize files subject-wise
+- [x] **Task 2 — DATA PROCESSING**
+  - [x] Extract text from documents
+  - [x] OCR scanned documents
+  - [x] Clean extracted data
+  - [x] Identify subjects, units, topics
+  - [x] Extract individual PYQs
+  - [x] Structure processed data
+- [x] **Task 3 — DATA ANALYSIS**
+  - [x] Analyze PYQ frequency and topic frequency
+  - [x] Identify important topics
+  - [x] Calculate topic/unit weightage
+  - [x] Identify question patterns
 
 ## PHASE 2 — FRONTEND
 - [x] **Task 4 — UI/UX & FRONTEND**
@@ -90,9 +90,9 @@
   - Connect all React UI components to backend APIs
 
 ## PHASE 10 — TESTING
-- [ ] **Task 24 — BACKEND TESTING**
-- [ ] **Task 25 — AI TESTING**
-- [ ] **Task 26 — END-TO-END TESTING**
+- [x] **Task 24 — BACKEND TESTING**
+- [x] **Task 25 — AI TESTING**
+- [x] **Task 26 — END-TO-END TESTING**
 
 ## PHASE 11 — DEPLOYMENT
 - [ ] **Task 27 — DOCKERIZATION**

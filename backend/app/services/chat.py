@@ -19,7 +19,7 @@ class ChatService:
         self.ai_provider = get_ai_provider(
             provider_type=settings.AI_PROVIDER,
             model_name=settings.AI_MODEL,
-            api_key=settings.AI_API_KEY,
+            api_key=settings.get_ai_api_key,
             base_url=settings.AI_BASE_URL
         )
         self.history_limit = 10
@@ -87,12 +87,13 @@ class ChatService:
         sources_metadata = []
         
         if request.subject_id:
-            # Check if subject is authorized (Assuming student can access any active subject for now, but in real life we'd verify)
+            # Check if subject is authorized and scope RAG retrieval to this student (SRS §5.3)
             retrieved_chunks = await rag_service.search(
                 db=db, 
                 query=request.content, 
                 subject_id=request.subject_id, 
-                top_k=3
+                top_k=3,
+                uploader_id=student.id
             )
             rag_context = rag_service.build_context(retrieved_chunks)
             for chunk in retrieved_chunks:

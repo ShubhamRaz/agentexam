@@ -1,15 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { getMaterials } from '../services/materials';
 import LoadingState from '../components/common/LoadingState';
 import EmptyState from '../components/common/EmptyState';
 
 /**
- * MaterialsList page — connected to:
- *   GET /api/v1/materials/
- *
- * Note: Students can only view materials. Upload is Admin/Teacher only.
- * The upload zone from the original design is preserved as a visual component
- * but triggers an informational alert.
+ * MaterialsList page — shows materials uploaded by the current student.
+ * Connected to: GET /api/v1/materials/  (server-scoped to current user)
  */
 const MaterialsList = () => {
   const [loading, setLoading] = useState(true);
@@ -55,9 +52,16 @@ const MaterialsList = () => {
     <div className="page-container p-4">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h2 className="text-3xl font-bold mb-2">Study Materials</h2>
-          <p className="text-muted text-sm">Browse course materials uploaded by your teachers.</p>
+          <h2 className="text-3xl font-bold mb-2">My Study Materials</h2>
+          <p className="text-muted text-sm">Documents you have uploaded and their processing status.</p>
         </div>
+        <Link
+          to="/upload-material"
+          className="btn btn-primary"
+          style={{ padding: '10px 18px', background: 'var(--color-primary)', color: 'white', borderRadius: 'var(--radius-md)', textDecoration: 'none', fontSize: '14px', fontWeight: 600 }}
+        >
+          <i className="fas fa-upload mr-2" />Upload New
+        </Link>
       </div>
 
       {error && (
@@ -68,8 +72,8 @@ const MaterialsList = () => {
 
       {!error && materials.length === 0 ? (
         <EmptyState
-          title="No Materials Found"
-          message="No study materials have been uploaded yet. Check back later or contact your teacher."
+          title="No Materials Yet"
+          message="Upload your syllabus, lab manuals, PYQs or notes to get started."
           icon="fa-folder-open"
         />
       ) : (

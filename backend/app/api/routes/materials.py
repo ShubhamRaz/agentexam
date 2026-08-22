@@ -1,7 +1,7 @@
 from typing import Any, List, Optional
 import uuid
 import os
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, UploadFile, File, Form, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,20 +12,37 @@ from app.schemas.material import MaterialResponse, MaterialUpdate
 from app.services import material as material_service
 from app.services.storage import get_storage_provider, StorageProvider
 from app.core.config import settings
+from app.db.session import AsyncSessionLocal
+from app.services.processing import ProcessingOrchestrator
 
 router = APIRouter()
+
+
+async def run_processing_task(material_id: uuid.UUID):
+    """Background task: run full document processing pipeline for a material."""
+    import logging
+    _logger = logging.getLogger(__name__)
+    try:
+        async with AsyncSessionLocal() as db_session:
+            orchestrator = ProcessingOrchestrator(db_session)
+            await orchestrator.process_material_sync(material_id)
+    except Exception as exc:
+        # Log but do not propagate — background task failures must not crash the server
+        _logger.error(f"Background processing task failed for material {material_id}: {exc}")
 
 @router.post("/upload", response_model=MaterialResponse, status_code=status.HTTP_201_CREATED)
 async def upload_material(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: SessionDep,
     title: str = Form(...),
     material_type: MaterialType = Form(...),
     subject_id: uuid.UUID = Form(...),
     file: UploadFile = File(...),
-    current_user: Any = Depends(require_role([RoleType.ADMIN, RoleType.TEACHER])),
+    # Any authenticated and active user may upload their own materials (REQ-1.1)
+    current_user: Any = Depends(get_current_active_user),
 ) -> Any:
-    """ Upload a new material. (Admin or Teacher) """
+    """ Upload a new academic material. Available to all authenticated users (students, teachers, admins). """
     # Validate file size if content-length header is present
     content_length = request.headers.get('content-length')
     if content_length:
@@ -44,6 +61,10 @@ async def upload_material(
         subject_id=subject_id,
         uploader_id=current_user.id
     )
+
+    # Auto-trigger document processing in background (REQ-1.2, REQ-1.3)
+    background_tasks.add_task(run_processing_task, material.id)
+
     return material
 
 
@@ -57,12 +78,18 @@ async def read_materials(
     limit: int = 20,
     current_user: Any = Depends(get_current_active_user),
 ) -> Any:
-    """ List materials with optional filters. """
+    """ List materials. Students see only their own uploads; admins/teachers see all. """
+    # Students are scoped to their own uploads for data isolation (SRS §5.3)
+    uploader_id = None
+    if current_user.role == RoleType.STUDENT:
+        uploader_id = current_user.id
+
     return await material_service.get_materials(
         db=db,
         subject_id=subject_id,
         material_type=material_type,
         processing_status=processing_status,
+        uploader_id=uploader_id,
         skip=skip,
         limit=limit
     )
@@ -78,6 +105,9 @@ async def read_material(
     material = await material_service.get_material(db, material_id)
     if not material:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
+    # Data isolation: Students can only view their own uploaded materials
+    if current_user.role == RoleType.STUDENT and material.uploaded_by != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this material")
     return material
 
 
@@ -91,6 +121,9 @@ async def download_material(
     material = await material_service.get_material(db, material_id)
     if not material:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
+    # Data isolation: Students can only download their own uploaded materials
+    if current_user.role == RoleType.STUDENT and material.uploaded_by != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to download this material")
         
     storage = get_storage_provider()
     try:
@@ -144,35 +177,29 @@ async def delete_material(
     if not success:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete material")
 
-from fastapi import BackgroundTasks
-from app.db.session import AsyncSessionLocal
-from app.services.processing import ProcessingOrchestrator
-
-async def run_processing_task(material_id: uuid.UUID):
-    async with AsyncSessionLocal() as db_session:
-        orchestrator = ProcessingOrchestrator(db_session)
-        await orchestrator.process_material_sync(material_id)
-
 @router.post("/{material_id}/process", status_code=status.HTTP_202_ACCEPTED)
 async def process_material(
     material_id: uuid.UUID,
     db: SessionDep,
     background_tasks: BackgroundTasks,
-    current_user: Any = Depends(require_role([RoleType.ADMIN, RoleType.TEACHER])),
+    current_user: Any = Depends(get_current_active_user),
 ) -> Any:
-    """ Trigger document processing for an uploaded material. """
-    # Verify material exists
+    """ Re-trigger document processing for an uploaded material (available to owner or admin). """
     material = await material_service.get_material(db, material_id)
     if not material:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
-        
+
+    # Only the uploader or an admin may reprocess
+    if current_user.role != RoleType.ADMIN and material.uploaded_by != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to process this material")
+
     if material.processing_status == "PROCESSING":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Material is already processing")
-        
-    if material.processing_status == "PROCESSED":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Material is already processed")
-        
-    # Queue background task
+
+    # Reset status so orchestrator will reprocess
+    material.processing_status = "UPLOADED"
+    await db.commit()
+
     background_tasks.add_task(run_processing_task, material_id)
-    
+
     return {"message": "Processing started", "material_id": material_id}

@@ -20,6 +20,9 @@ reusable_oauth2 = OAuth2PasswordBearer(
 TokenDep = Annotated[str, Depends(reusable_oauth2)]
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
 
+from sqlalchemy.orm import selectin_polymorphic
+from app.models.user import User, RoleType, Student, Teacher, Admin
+
 async def get_current_user(
     db: SessionDep, token: TokenDep
 ) -> User:
@@ -51,7 +54,8 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    stmt = select(User).options(selectin_polymorphic(User, [Student, Teacher, Admin])).where(User.id == user_id)
+    result = await db.execute(stmt)
     user = result.scalars().first()
     
     if not user:

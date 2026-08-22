@@ -13,7 +13,11 @@ from app.services.storage import StorageProvider
 SUPPORTED_MIME_TYPES = {
     "application/pdf": "pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-    "application/msword": "doc"
+    "application/msword": "doc",
+    "text/plain": "txt",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
 }
 
 async def upload_material(
@@ -35,7 +39,7 @@ async def upload_material(
     if file.content_type not in SUPPORTED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, 
-            detail="Unsupported file type. Allowed: PDF, DOC, DOCX"
+            detail="Unsupported file type. Allowed: PDF, DOC, DOCX, TXT, PNG, JPG, JPEG"
         )
     file_type = SUPPORTED_MIME_TYPES[file.content_type]
     
@@ -86,6 +90,7 @@ async def get_materials(
     subject_id: Optional[uuid.UUID] = None,
     material_type: Optional[MaterialType] = None,
     processing_status: Optional[str] = None,
+    uploader_id: Optional[uuid.UUID] = None,
     skip: int = 0,
     limit: int = 20
 ) -> List[StudyMaterial]:
@@ -96,6 +101,8 @@ async def get_materials(
         query = query.where(StudyMaterial.material_type == material_type)
     if processing_status:
         query = query.where(StudyMaterial.processing_status == processing_status)
+    if uploader_id:
+        query = query.where(StudyMaterial.uploaded_by == uploader_id)
         
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)

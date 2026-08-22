@@ -93,12 +93,14 @@ async def delete_subject(db: AsyncSession, subject_id: uuid.UUID) -> bool:
 
 
 # ----------------- UNITS (Chapter) -----------------
+from sqlalchemy.orm import selectinload
+
 async def get_units(db: AsyncSession, subject_id: uuid.UUID) -> List[Chapter]:
-    result = await db.execute(select(Chapter).where(Chapter.subject_id == subject_id))
+    result = await db.execute(select(Chapter).where(Chapter.subject_id == subject_id).options(selectinload(Chapter.topics)))
     return result.scalars().all()
 
 async def get_unit(db: AsyncSession, unit_id: uuid.UUID) -> Optional[Chapter]:
-    result = await db.execute(select(Chapter).where(Chapter.id == unit_id))
+    result = await db.execute(select(Chapter).where(Chapter.id == unit_id).options(selectinload(Chapter.topics)))
     return result.scalars().first()
 
 async def create_unit(db: AsyncSession, unit_in: UnitCreate) -> Chapter:
@@ -155,12 +157,15 @@ async def get_subject_syllabus(db: AsyncSession, subject_id: uuid.UUID) -> List[
 async def get_pyqs(
     db: AsyncSession, 
     subject_id: Optional[uuid.UUID] = None, 
+    uploader_id: Optional[uuid.UUID] = None,
     skip: int = 0, 
     limit: int = 20
 ) -> List[StudyMaterial]:
     query = select(StudyMaterial).where(StudyMaterial.material_type == MaterialType.PYQ)
     if subject_id:
         query = query.where(StudyMaterial.subject_id == subject_id)
+    if uploader_id:
+        query = query.where(StudyMaterial.uploaded_by == uploader_id)
     
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)

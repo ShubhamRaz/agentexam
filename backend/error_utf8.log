@@ -1,0 +1,1468 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.14, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend
+plugins: anyio-4.14.2, asyncio-1.4.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/exams/test_exams.py::test_exam_flow FAILED                         [100%]
+
+================================== FAILURES ===================================
+_______________________________ test_exam_flow ________________________________
+
+auth_client_student = <httpx.AsyncClient object at 0x000002F3D4D63E00>
+demo_subject_id = 'b3b3a6df-bca4-479c-b045-24dd937b9652'
+
+    @pytest.mark.asyncio
+    async def test_exam_flow(auth_client_student, demo_subject_id):
+        if not demo_subject_id:
+            pytest.skip("No demo subject found")
+    
+        # 1. Create Exam
+        response = await auth_client_student.post("/api/v1/exams", json={
+            "subject_id": demo_subject_id,
+            "test_type": "THEORY",
+            "difficulty_level": "MEDIUM",
+            "question_count": 2,
+            "duration_minutes": 60
+        })
+    
+        assert response.status_code == 201
+        data = response.json()
+        assert data["status"] == "DRAFT"
+        exam_id = data["id"]
+    
+        # 2. Start Exam
+>       response = await auth_client_student.post(f"/api/v1/exams/{exam_id}/start")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\exams\test_exams.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <httpx.AsyncClient object at 0x000002F3D4D63E00>
+url = '/api/v1/exams/f840d230-0b75-4b5f-b52b-c1aec8afe38b/start', content = None
+data = None, files = None, json = None, params = None, headers = None
+cookies = None
+auth = <httpx._client.UseClientDefault object at 0x000002F3CEF9A510>
+follow_redirects = <httpx._client.UseClientDefault object at 0x000002F3CEF9A510>
+timeout = <httpx._client.UseClientDefault object at 0x000002F3CEF9A510>
+extensions = None
+
+    async def post(
+        self,
+        url: URL | str,
+        *,
+        content: RequestContent | None = None,
+        data: RequestData | None = None,
+        files: RequestFiles | None = None,
+        json: typing.Any | None = None,
+        params: QueryParamTypes | None = None,
+        headers: HeaderTypes | None = None,
+        cookies: CookieTypes | None = None,
+        auth: AuthTypes | UseClientDefault = USE_CLIENT_DEFAULT,
+        follow_redirects: bool | UseClientDefault = USE_CLIENT_DEFAULT,
+        timeout: TimeoutTypes | UseClientDefault = USE_CLIENT_DEFAULT,
+        extensions: RequestExtensions | None = None,
+    ) -> Response:
+        """
+        Send a `POST` request.
+    
+        **Parameters**: See `httpx.request`.
+        """
+>       return await self.request(
+            "POST",
+            url,
+            content=content,
+            data=data,
+            files=files,
+            json=json,
+            params=params,
+            headers=headers,
+            cookies=cookies,
+            auth=auth,
+            follow_redirects=follow_redirects,
+            timeout=timeout,
+            extensions=extensions,
+        )
+
+.venv\Lib\site-packages\httpx\_client.py:1859: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <httpx.AsyncClient object at 0x000002F3D4D63E00>, method = 'POST'
+url = '/api/v1/exams/f840d230-0b75-4b5f-b52b-c1aec8afe38b/start', content = None
+data = None, files = None, json = None, params = None, headers = None
+cookies = None
+auth = <httpx._client.UseClientDefault object at 0x000002F3CEF9A510>
+follow_redirects = <httpx._client.UseClientDefault object at 0x000002F3CEF9A510>
+timeout = <httpx._client.UseClientDefault object at 0x000002F3CEF9A510>
+extensions = None
+
+    async def request(
+        self,
+        method: str,
+        url: URL | str,
+        *,
+        content: RequestContent | None = None,
+        data: RequestData | None = None,
+        files: RequestFiles | None = None,
+        json: typing.Any | None = None,
+        params: QueryParamTypes | None = None,
+        headers: HeaderTypes | None = None,
+        cookies: CookieTypes | None = None,
+        auth: AuthTypes | UseClientDefault | None = USE_CLIENT_DEFAULT,
+        follow_redirects: bool | UseClientDefault = USE_CLIENT_DEFAULT,
+        timeout: TimeoutTypes | UseClientDefault = USE_CLIENT_DEFAULT,
+        extensions: RequestExtensions | None = None,
+    ) -> Response:
+        """
+        Build and send a request.
+    
+        Equivalent to:
+    
+        ```python
+        request = client.build_request(...)
+        response = await client.send(request, ...)
+        ```
+    
+        See `AsyncClient.build_request()`, `AsyncClient.send()`
+        and [Merging of configuration][0] for how the various parameters
+        are merged with client-level configuration.
+    
+        [0]: /advanced/clients/#merging-of-configuration
+        """
+    
+        if cookies is not None:  # pragma: no cover
+            message = (
+                "Setting per-request cookies=<...> is being deprecated, because "
+                "the expected behaviour on cookie persistence is ambiguous. Set "
+                "cookies directly on the client instance instead."
+            )
+            warnings.warn(message, DeprecationWarning, stacklevel=2)
+    
+        request = self.build_request(
+            method=method,
+            url=url,
+            content=content,
+            data=data,
+            files=files,
+            json=json,
+            params=params,
+            headers=headers,
+            cookies=cookies,
+            timeout=timeout,
+            extensions=extensions,
+        )
+>       return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\httpx\_client.py:1540: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <httpx.AsyncClient object at 0x000002F3D4D63E00>
+request = <Request('POST', 'http://test/api/v1/exams/f840d230-0b75-4b5f-b52b-c1aec8afe38b/start')>
+stream = False, auth = <httpx.Auth object at 0x000002F3D50D8910>
+follow_redirects = True
+
+    async def send(
+        self,
+        request: Request,
+        *,
+        stream: bool = False,
+        auth: AuthTypes | UseClientDefault | None = USE_CLIENT_DEFAULT,
+        follow_redirects: bool | UseClientDefault = USE_CLIENT_DEFAULT,
+    ) -> Response:
+        """
+        Send a request.
+    
+        The request is sent as-is, unmodified.
+    
+        Typically you'll want to build one with `AsyncClient.build_request()`
+        so that any client-level configuration is merged into the request,
+        but passing an explicit `httpx.Request()` is supported as well.
+    
+        See also: [Request instances][0]
+    
+        [0]: /advanced/clients/#request-instances
+        """
+        if self._state == ClientState.CLOSED:
+            raise RuntimeError("Cannot send a request, as the client has been closed.")
+    
+        self._state = ClientState.OPENED
+        follow_redirects = (
+            self.follow_redirects
+            if isinstance(follow_redirects, UseClientDefault)
+            else follow_redirects
+        )
+    
+        self._set_timeout(request)
+    
+        auth = self._build_request_auth(request, auth)
+    
+>       response = await self._send_handling_auth(
+            request,
+            auth=auth,
+            follow_redirects=follow_redirects,
+            history=[],
+        )
+
+.venv\Lib\site-packages\httpx\_client.py:1629: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <httpx.AsyncClient object at 0x000002F3D4D63E00>
+request = <Request('POST', 'http://test/api/v1/exams/f840d230-0b75-4b5f-b52b-c1aec8afe38b/start')>
+auth = <httpx.Auth object at 0x000002F3D50D8910>, follow_redirects = True
+history = []
+
+    async def _send_handling_auth(
+        self,
+        request: Request,
+        auth: Auth,
+        follow_redirects: bool,
+        history: list[Response],
+    ) -> Response:
+        auth_flow = auth.async_auth_flow(request)
+        try:
+            request = await auth_flow.__anext__()
+    
+            while True:
+>               response = await self._send_handling_redirects(
+                    request,
+                    follow_redirects=follow_redirects,
+                    history=history,
+                )
+
+.venv\Lib\site-packages\httpx\_client.py:1657: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <httpx.AsyncClient object at 0x000002F3D4D63E00>
+request = <Request('POST', 'http://test/api/v1/exams/f840d230-0b75-4b5f-b52b-c1aec8afe38b/start')>
+follow_redirects = True, history = []
+
+    async def _send_handling_redirects(
+        self,
+        request: Request,
+        follow_redirects: bool,
+        history: list[Response],
+    ) -> Response:
+        while True:
+            if len(history) > self.max_redirects:
+                raise TooManyRedirects(
+                    "Exceeded maximum allowed redirects.", request=request
+                )
+    
+            for hook in self._event_hooks["request"]:
+                await hook(request)
+    
+>           response = await self._send_single_request(request)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\httpx\_client.py:1694: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <httpx.AsyncClient object at 0x000002F3D4D63E00>
+request = <Request('POST', 'http://test/api/v1/exams/f840d230-0b75-4b5f-b52b-c1aec8afe38b/start')>
+
+    async def _send_single_request(self, request: Request) -> Response:
+        """
+        Sends a single request, without handling any redirections.
+        """
+        transport = self._transport_for_url(request.url)
+        start = time.perf_counter()
+    
+        if not isinstance(request.stream, AsyncByteStream):
+            raise RuntimeError(
+                "Attempted to send an sync request with an AsyncClient instance."
+            )
+    
+        with request_context(request=request):
+>           response = await transport.handle_async_request(request)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\httpx\_client.py:1730: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <httpx.ASGITransport object at 0x000002F3D4D63CB0>
+request = <Request('POST', 'http://test/api/v1/exams/f840d230-0b75-4b5f-b52b-c1aec8afe38b/start')>
+
+    async def handle_async_request(
+        self,
+        request: Request,
+    ) -> Response:
+        assert isinstance(request.stream, AsyncByteStream)
+    
+        # ASGI scope.
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": request.method,
+            "headers": [(k.lower(), v) for (k, v) in request.headers.raw],
+            "scheme": request.url.scheme,
+            "path": request.url.path,
+            "raw_path": request.url.raw_path.split(b"?")[0],
+            "query_string": request.url.query,
+            "server": (request.url.host, request.url.port),
+            "client": self.client,
+            "root_path": self.root_path,
+        }
+    
+        # Request.
+        request_body_chunks = request.stream.__aiter__()
+        request_complete = False
+    
+        # Response.
+        status_code = None
+        response_headers = None
+        body_parts = []
+        response_started = False
+        response_complete = create_event()
+    
+        # ASGI callables.
+    
+        async def receive() -> dict[str, typing.Any]:
+            nonlocal request_complete
+    
+            if request_complete:
+                await response_complete.wait()
+                return {"type": "http.disconnect"}
+    
+            try:
+                body = await request_body_chunks.__anext__()
+            except StopAsyncIteration:
+                request_complete = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            return {"type": "http.request", "body": body, "more_body": True}
+    
+        async def send(message: typing.MutableMapping[str, typing.Any]) -> None:
+            nonlocal status_code, response_headers, response_started
+    
+            if message["type"] == "http.response.start":
+                assert not response_started
+    
+                status_code = message["status"]
+                response_headers = message.get("headers", [])
+                response_started = True
+    
+            elif message["type"] == "http.response.body":
+                assert not response_complete.is_set()
+                body = message.get("body", b"")
+                more_body = message.get("more_body", False)
+    
+                if body and request.method != "HEAD":
+                    body_parts.append(body)
+    
+                if not more_body:
+                    response_complete.set()
+    
+        try:
+>           await self.app(scope, receive, send)
+
+.venv\Lib\site-packages\httpx\_transports\asgi.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <fastapi.applications.FastAPI object at 0x000002F3D4B2ABA0>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function ASGITransport.handle_async_request.<locals>.send at 0x000002F3D5027380>
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if self.root_path:
+            scope["root_path"] = self.root_path
+>       await super().__call__(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\applications.py:1163: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <fastapi.applications.FastAPI object at 0x000002F3D4B2ABA0>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function ASGITransport.handle_async_request.<locals>.send at 0x000002F3D5027380>
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        scope["app"] = self
+        if self.middleware_stack is None:
+            self.middleware_stack = self.build_middleware_stack()
+>       await self.middleware_stack(scope, receive, send)
+
+.venv\Lib\site-packages\starlette\applications.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <starlette.middleware.errors.ServerErrorMiddleware object at 0x000002F3D4E53A10>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function ASGITransport.handle_async_request.<locals>.send at 0x000002F3D5027380>
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+    
+        response_started = False
+    
+        async def _send(message: Message) -> None:
+            nonlocal response_started, send
+    
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+    
+        try:
+            await self.app(scope, receive, _send)
+        except Exception as exc:
+            request = Request(scope)
+            if self.debug:
+                # In debug mode, return traceback responses.
+                response = self.debug_response(request, exc)
+            elif self.handler is None:
+                # Use our default 500 error handler.
+                response = self.error_response(request, exc)
+            else:
+                # Use an installed 500 error handler.
+                if is_async_callable(self.handler):
+                    response = await self.handler(request, exc)  # type: ignore[assignment, arg-type]
+                else:
+                    response = await run_in_threadpool(self.handler, request, exc)  # type: ignore[arg-type]
+    
+            if not response_started:
+                await response(scope, receive, send)
+    
+            # We always continue to raise the exception.
+            # This allows servers to log the error, or allows test clients
+            # to optionally raise the error within the test case.
+>           raise exc
+
+.venv\Lib\site-packages\starlette\middleware\errors.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <starlette.middleware.errors.ServerErrorMiddleware object at 0x000002F3D4E53A10>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function ASGITransport.handle_async_request.<locals>.send at 0x000002F3D5027380>
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+    
+        response_started = False
+    
+        async def _send(message: Message) -> None:
+            nonlocal response_started, send
+    
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+    
+        try:
+>           await self.app(scope, receive, _send)
+
+.venv\Lib\site-packages\starlette\middleware\errors.py:164: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <starlette.middleware.cors.CORSMiddleware object at 0x000002F3D4E538C0>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function ServerErrorMiddleware.__call__.<locals>._send at 0x000002F3D5026C00>
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":  # pragma: no cover
+            await self.app(scope, receive, send)
+            return
+    
+        method = scope["method"]
+        headers = Headers(scope=scope)
+        origin = headers.get("origin")
+    
+        if origin is None:
+>           await self.app(scope, receive, send)
+
+.venv\Lib\site-packages\starlette\middleware\cors.py:88: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <starlette.middleware.exceptions.ExceptionMiddleware object at 0x000002F3D4E53770>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function ServerErrorMiddleware.__call__.<locals>._send at 0x000002F3D5026C00>
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+    
+        scope["starlette.exception_handlers"] = (
+            self._exception_handlers,
+            self._status_handlers,
+        )
+    
+        conn: Request | WebSocket
+        if scope["type"] == "http":
+            conn = Request(scope, receive, send)
+        else:
+            conn = WebSocket(scope, receive, send)
+    
+>       await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+
+.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function ServerErrorMiddleware.__call__.<locals>._send at 0x000002F3D5026C00>
+
+    async def wrapped_app(scope: Scope, receive: Receive, send: Send) -> None:
+        response_started = False
+    
+        async def sender(message: Message) -> None:
+            nonlocal response_started
+    
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+    
+        try:
+            await app(scope, receive, sender)
+        except Exception as exc:
+            handler = None
+    
+            if isinstance(exc, HTTPException):
+                handler = status_handlers.get(exc.status_code)
+    
+            if handler is None:
+                handler = _lookup_exception_handler(exception_handlers, exc)
+    
+            if handler is None:
+>               raise exc
+
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function ServerErrorMiddleware.__call__.<locals>._send at 0x000002F3D5026C00>
+
+    async def wrapped_app(scope: Scope, receive: Receive, send: Send) -> None:
+        response_started = False
+    
+        async def sender(message: Message) -> None:
+            nonlocal response_started
+    
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+    
+        try:
+>           await app(scope, receive, sender)
+
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <fastapi.middleware.asyncexitstack.AsyncExitStackMiddleware object at 0x000002F3D4E53620>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        async with AsyncExitStack() as stack:
+            scope[self.context_name] = stack
+>           await self.app(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <fastapi.routing.APIRouter object at 0x000002F3D4D0FBD0>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """
+        The main entry point to the Router class.
+        """
+>       await self.middleware_stack(scope, receive, send)
+
+.venv\Lib\site-packages\starlette\routing.py:670: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <fastapi.routing.APIRouter object at 0x000002F3D4D0FBD0>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def app(self, scope: Scope, receive: Receive, send: Send) -> None:
+        assert scope["type"] in ("http", "websocket", "lifespan")
+    
+        if "router" not in scope:
+            scope["router"] = self
+    
+        if scope["type"] == "lifespan":
+            await self.lifespan(scope, receive, send)
+            return
+    
+        partial: tuple[BaseRoute, Scope] | None = None
+        for route in self.routes:
+            match, child_scope = route.matches(scope)
+            if match == Match.FULL:
+                scope.update(child_scope)
+>               await route.handle(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\routing.py:2734: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = _IncludedRouter(original_router=<fastapi.routing.APIRouter object at 0x000002F3D4D0D260>, include_context=_RouterInclu...e)], _effective_candidates_version=102, _effective_low_priority_routes=[], _effective_low_priority_routes_version=None)
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        _get_fastapi_scope(scope)[_FASTAPI_INCLUDED_ROUTER_KEY] = self
+>       await self.original_router.handle(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\routing.py:1780: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <fastapi.routing.APIRouter object at 0x000002F3D4D0D260>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        included_router = _get_scope_included_router(scope)
+        if (
+            isinstance(included_router, _IncludedRouter)
+            and included_router.original_router is self
+        ):
+>           await included_router._handle_selected(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\routing.py:2789: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = _IncludedRouter(original_router=<fastapi.routing.APIRouter object at 0x000002F3D4D0D260>, include_context=_RouterInclu...e)], _effective_candidates_version=102, _effective_low_priority_routes=[], _effective_low_priority_routes_version=None)
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def _handle_selected(
+        self, scope: Scope, receive: Receive, send: Send
+    ) -> None:
+        match, child_scope, route, effective_context = self._match(scope)
+        if match == Match.NONE or route is None:
+            await self.original_router.default(scope, receive, send)
+            return
+        scope.update(child_scope)
+        if isinstance(route, _IncludedRouter):
+>           await route.handle(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\routing.py:1791: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = _IncludedRouter(original_router=<fastapi.routing.APIRouter object at 0x000002F3D4B7BDF0>, include_context=_RouterInclu...lse)], _effective_candidates_version=7, _effective_low_priority_routes=[], _effective_low_priority_routes_version=None)
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        _get_fastapi_scope(scope)[_FASTAPI_INCLUDED_ROUTER_KEY] = self
+>       await self.original_router.handle(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\routing.py:1780: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <fastapi.routing.APIRouter object at 0x000002F3D4B7BDF0>
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        included_router = _get_scope_included_router(scope)
+        if (
+            isinstance(included_router, _IncludedRouter)
+            and included_router.original_router is self
+        ):
+>           await included_router._handle_selected(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\routing.py:2789: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = _IncludedRouter(original_router=<fastapi.routing.APIRouter object at 0x000002F3D4B7BDF0>, include_context=_RouterInclu...lse)], _effective_candidates_version=7, _effective_low_priority_routes=[], _effective_low_priority_routes_version=None)
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def _handle_selected(
+        self, scope: Scope, receive: Receive, send: Send
+    ) -> None:
+        match, child_scope, route, effective_context = self._match(scope)
+        if match == Match.NONE or route is None:
+            await self.original_router.default(scope, receive, send)
+            return
+        scope.update(child_scope)
+        if isinstance(route, _IncludedRouter):
+            await route.handle(scope, receive, send)
+            return
+        if effective_context is not None:
+            _get_fastapi_scope(scope)[_FASTAPI_EFFECTIVE_ROUTE_CONTEXT_KEY] = (
+                effective_context
+            )
+            original_route = effective_context.original_route
+            if isinstance(original_route, APIRoute):
+                scope["route"] = original_route
+>               await original_route.handle(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\routing.py:1800: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = APIRoute(path='/{exam_id}/start', name='start_exam', methods=['POST'])
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        effective_context = _get_scope_effective_route_context(scope)
+        if effective_context is not None and effective_context.original_route is self:
+            methods = effective_context.methods
+            if methods and scope["method"] not in methods:
+                headers = {"Allow": ", ".join(methods)}
+                if "app" in scope:
+                    raise HTTPException(status_code=405, headers=headers)
+                response = PlainTextResponse(
+                    "Method Not Allowed", status_code=405, headers=headers
+                )
+                await response(scope, receive, send)
+                return
+            token = _effective_route_context_var.set(effective_context)
+            try:
+                app = request_response(self.get_route_handler())
+            finally:
+                _effective_route_context_var.reset(token)
+>           await app(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\routing.py:1279: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        request = Request(scope, receive, send)
+    
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            # Starts customization
+            response_awaited = False
+            async with AsyncExitStack() as request_stack:
+                scope["fastapi_inner_astack"] = request_stack
+                async with AsyncExitStack() as function_stack:
+                    scope["fastapi_function_astack"] = function_stack
+                    response = await f(request)
+                await response(scope, receive, send)
+                # Continues customization
+                response_awaited = True
+            if not response_awaited:
+                raise FastAPIError(
+                    "Response not awaited. There's a high chance that the "
+                    "application code is raising an exception and a dependency with yield "
+                    "has a block with a bare except, or a block with except Exception, "
+                    "and is not raising the exception again. Read more about it in the "
+                    "docs: https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/#dependencies-with-yield-and-except"
+                )
+    
+        # Same as in Starlette
+>       await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+
+.venv\Lib\site-packages\fastapi\routing.py:158: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def wrapped_app(scope: Scope, receive: Receive, send: Send) -> None:
+        response_started = False
+    
+        async def sender(message: Message) -> None:
+            nonlocal response_started
+    
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+    
+        try:
+            await app(scope, receive, sender)
+        except Exception as exc:
+            handler = None
+    
+            if isinstance(exc, HTTPException):
+                handler = status_handlers.get(exc.status_code)
+    
+            if handler is None:
+                handler = _lookup_exception_handler(exception_handlers, exc)
+    
+            if handler is None:
+>               raise exc
+
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027420>
+
+    async def wrapped_app(scope: Scope, receive: Receive, send: Send) -> None:
+        response_started = False
+    
+        async def sender(message: Message) -> None:
+            nonlocal response_started
+    
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+    
+        try:
+>           await app(scope, receive, sender)
+
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': 'POST', ...}
+receive = <function ASGITransport.handle_async_request.<locals>.receive at 0x000002F3D4FE0D60>
+send = <function wrap_app_handling_exceptions.<locals>.wrapped_app.<locals>.sender at 0x000002F3D5027D80>
+
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        # Starts customization
+        response_awaited = False
+        async with AsyncExitStack() as request_stack:
+            scope["fastapi_inner_astack"] = request_stack
+            async with AsyncExitStack() as function_stack:
+                scope["fastapi_function_astack"] = function_stack
+>               response = await f(request)
+                           ^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\fastapi\routing.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+request = <starlette.requests.Request object at 0x000002F3D4EF3360>
+
+    async def app(request: Request) -> Response:
+        response: Response | None = None
+        file_stack = request.scope.get("fastapi_middleware_astack")
+        assert isinstance(file_stack, AsyncExitStack), (
+            "fastapi_middleware_astack not found in request scope"
+        )
+    
+        # Extract endpoint context for error messages
+        endpoint_ctx = (
+            _extract_endpoint_context(dependant.call)
+            if dependant.call
+            else EndpointContext()
+        )
+    
+        if dependant.path:
+            # For mounted sub-apps, include the mount path prefix
+            mount_path = request.scope.get("root_path", "").rstrip("/")
+            endpoint_ctx["path"] = f"{request.method} {mount_path}{dependant.path}"
+    
+        # Read body and auto-close files
+        try:
+            body: Any = None
+            if body_field:
+                if is_body_form:
+                    body = await request.form()
+                    file_stack.push_async_callback(body.close)
+                else:
+                    body_bytes = await request.body()
+                    if body_bytes:
+                        json_body: Any = Undefined
+                        content_type_value = request.headers.get("content-type")
+                        if not content_type_value:
+                            if not actual_strict_content_type:
+                                json_body = await request.json()
+                        else:
+                            message = email.message.Message()
+                            message["content-type"] = content_type_value
+                            if message.get_content_maintype() == "application":
+                                subtype = message.get_content_subtype()
+                                if subtype == "json" or subtype.endswith("+json"):
+                                    json_body = await request.json()
+                        if json_body != Undefined:
+                            body = json_body
+                        else:
+                            body = body_bytes
+        except json.JSONDecodeError as e:
+            validation_error = RequestValidationError(
+                [
+                    {
+                        "type": "json_invalid",
+                        "loc": ("body", e.pos),
+                        "msg": "JSON decode error",
+                        "input": {},
+                        "ctx": {"error": e.msg},
+                    }
+                ],
+                body=e.doc,
+                endpoint_ctx=endpoint_ctx,
+            )
+            raise validation_error from e
+        except HTTPException:
+            # If a middleware raises an HTTPException, it should be raised again
+            raise
+        except Exception as e:
+            http_error = HTTPException(
+                status_code=400, detail="There was an error parsing the body"
+            )
+            raise http_error from e
+    
+        # Solve dependencies and run path operation function, auto-closing dependencies
+        errors: list[Any] = []
+        async_exit_stack = request.scope.get("fastapi_inner_astack")
+        assert isinstance(async_exit_stack, AsyncExitStack), (
+            "fastapi_inner_astack not found in request scope"
+        )
+        solved_result = await solve_dependencies(
+            request=request,
+            dependant=dependant,
+            body=cast(dict[str, Any] | FormData | bytes | None, body),
+            dependency_overrides_provider=dependency_overrides_provider,
+            async_exit_stack=async_exit_stack,
+            embed_body_fields=embed_body_fields,
+        )
+        errors = solved_result.errors
+        assert dependant.call  # For types
+        if not errors:
+            # Shared serializer for stream items (JSONL and SSE).
+            # Validates against stream_item_field when set, then
+            # serializes to JSON bytes.
+            def _serialize_data(data: Any) -> bytes:
+                if stream_item_field:
+                    value, errors_ = stream_item_field.validate(
+                        data, {}, loc=("response",)
+                    )
+                    if errors_:
+                        ctx = endpoint_ctx or EndpointContext()
+                        raise ResponseValidationError(
+                            errors=errors_,
+                            body=data,
+                            endpoint_ctx=ctx,
+                        )
+                    return stream_item_field.serialize_json(
+                        value,
+                        include=response_model_include,
+                        exclude=response_model_exclude,
+                        by_alias=response_model_by_alias,
+                        exclude_unset=response_model_exclude_unset,
+                        exclude_defaults=response_model_exclude_defaults,
+                        exclude_none=response_model_exclude_none,
+                    )
+                else:
+                    data = jsonable_encoder(data)
+                    return json.dumps(data).encode("utf-8")
+    
+            if is_sse_stream:
+                # Generator endpoint: stream as Server-Sent Events
+                gen = dependant.call(**solved_result.values)
+    
+                def _serialize_sse_item(item: Any) -> bytes:
+                    if isinstance(item, ServerSentEvent):
+                        # User controls the event structure.
+                        # Serialize the data payload if present.
+                        # For ServerSentEvent items we skip stream_item_field
+                        # validation (the user may mix types intentionally).
+                        if item.raw_data is not None:
+                            data_str: str | None = item.raw_data
+                        elif item.data is not None:
+                            if hasattr(item.data, "model_dump_json"):
+                                data_str = item.data.model_dump_json()
+                            else:
+                                data_str = json.dumps(jsonable_encoder(item.data))
+                        else:
+                            data_str = None
+                        return format_sse_event(
+                            data_str=data_str,
+                            event=item.event,
+                            id=item.id,
+                            retry=item.retry,
+                            comment=item.comment,
+                        )
+                    else:
+                        # Plain object: validate + serialize via
+                        # stream_item_field (if set) and wrap in data field
+                        return format_sse_event(
+                            data_str=_serialize_data(item).decode("utf-8")
+                        )
+    
+                if _is_async_gen_callable(dependant.call):
+                    sse_aiter: AsyncIterator[Any] = gen.__aiter__()
+                else:
+                    sse_aiter = iterate_in_threadpool(gen)
+    
+                @asynccontextmanager
+                async def _sse_producer_cm() -> AsyncIterator[
+                    ObjectReceiveStream[bytes]
+                ]:
+                    # Use a memory stream to decouple generator iteration
+                    # from the keepalive timer. A producer task pulls items
+                    # from the generator independently, so
+                    # `anyio.fail_after` never wraps the generator's
+                    # `__anext__` directly - avoiding CancelledError that
+                    # would finalize the generator and also working for sync
+                    # generators running in a thread pool.
+                    #
+                    # This context manager is entered on the request-scoped
+                    # AsyncExitStack so its __aexit__ (which cancels the
+                    # task group) is called by the exit stack after the
+                    # streaming response completes ù not by async generator
+                    # finalization via GeneratorExit.
+                    # Ref: https://peps.python.org/pep-0789/
+                    send_stream, receive_stream = anyio.create_memory_object_stream[
+                        bytes
+                    ](max_buffer_size=1)
+    
+                    async def _producer() -> None:
+                        async with send_stream:
+                            async for raw_item in sse_aiter:
+                                await send_stream.send(_serialize_sse_item(raw_item))
+    
+                    send_keepalive, receive_keepalive = (
+                        anyio.create_memory_object_stream[bytes](max_buffer_size=1)
+                    )
+    
+                    async def _keepalive_inserter() -> None:
+                        """Read from the producer and forward to the output,
+                        inserting keepalive comments on timeout."""
+                        async with send_keepalive, receive_stream:
+                            try:
+                                while True:
+                                    try:
+                                        with anyio.fail_after(_PING_INTERVAL):
+                                            data = await receive_stream.receive()
+                                        await send_keepalive.send(data)
+                                    except TimeoutError:
+                                        await send_keepalive.send(KEEPALIVE_COMMENT)
+                            except anyio.EndOfStream:
+                                pass
+    
+                    async with anyio.create_task_group() as tg:
+                        tg.start_soon(_producer)
+                        tg.start_soon(_keepalive_inserter)
+                        yield receive_keepalive
+                        tg.cancel_scope.cancel()
+    
+                # Enter the SSE context manager on the request-scoped
+                # exit stack. The stack outlives the streaming response,
+                # so __aexit__ runs via proper structured teardown, not
+                # via GeneratorExit thrown into an async generator.
+                sse_receive_stream = await async_exit_stack.enter_async_context(
+                    _sse_producer_cm()
+                )
+                # Ensure the receive stream is closed when the exit stack
+                # unwinds, preventing ResourceWarning from __del__.
+                async_exit_stack.push_async_callback(sse_receive_stream.aclose)
+    
+                async def _sse_with_checkpoints(
+                    stream: ObjectReceiveStream[bytes],
+                ) -> AsyncIterator[bytes]:
+                    async for data in stream:
+                        yield data
+                        # Guarantee a checkpoint so cancellation can be
+                        # delivered even when the producer is faster than
+                        # the consumer and receive() never suspends.
+                        await anyio.sleep(0)
+    
+                sse_stream_content: AsyncIterator[bytes] | Iterator[bytes] = (
+                    _sse_with_checkpoints(sse_receive_stream)
+                )
+    
+                response_args = _build_response_args(
+                    status_code=status_code, solved_result=solved_result
+                )
+                response = StreamingResponse(
+                    sse_stream_content,
+                    media_type="text/event-stream",
+                    **response_args,
+                )
+                response.headers["Cache-Control"] = "no-cache"
+                # For Nginx proxies to not buffer server sent events
+                response.headers["X-Accel-Buffering"] = "no"
+                response.headers.raw.extend(solved_result.response.headers.raw)
+            elif is_json_stream:
+                # Generator endpoint: stream as JSONL
+                gen = dependant.call(**solved_result.values)
+    
+                def _serialize_item(item: Any) -> bytes:
+                    return _serialize_data(item) + b"\n"
+    
+                if _is_async_gen_callable(dependant.call):
+    
+                    async def _async_stream_jsonl() -> AsyncIterator[bytes]:
+                        async for item in gen:
+                            yield _serialize_item(item)
+                            # To allow for cancellation to trigger
+                            # Ref: https://github.com/fastapi/fastapi/issues/14680
+                            await anyio.sleep(0)
+    
+                    jsonl_stream_content: AsyncIterator[bytes] | Iterator[bytes] = (
+                        _async_stream_jsonl()
+                    )
+                else:
+    
+                    def _sync_stream_jsonl() -> Iterator[bytes]:
+                        for item in gen:  # ty: ignore[not-iterable]
+                            yield _serialize_item(item)
+    
+                    jsonl_stream_content = _sync_stream_jsonl()
+    
+                response_args = _build_response_args(
+                    status_code=status_code, solved_result=solved_result
+                )
+                response = StreamingResponse(
+                    jsonl_stream_content,
+                    media_type="application/jsonl",
+                    **response_args,
+                )
+                response.headers.raw.extend(solved_result.response.headers.raw)
+            elif _is_async_gen_callable(dependant.call) or _is_gen_callable(
+                dependant.call
+            ):
+                # Raw streaming with explicit response_class (e.g. StreamingResponse)
+                gen = dependant.call(**solved_result.values)
+                if _is_async_gen_callable(dependant.call):
+    
+                    async def _async_stream_raw(
+                        async_gen: AsyncIterator[Any],
+                    ) -> AsyncIterator[Any]:
+                        async for chunk in async_gen:
+                            yield chunk
+                            # To allow for cancellation to trigger
+                            # Ref: https://github.com/fastapi/fastapi/issues/14680
+                            await anyio.sleep(0)
+    
+                    gen = _async_stream_raw(gen)
+                response_args = _build_response_args(
+                    status_code=status_code, solved_result=solved_result
+                )
+                response = actual_response_class(content=gen, **response_args)
+                response.headers.raw.extend(solved_result.response.headers.raw)
+            else:
+>               raw_response = await run_endpoint_function(
+                    dependant=dependant,
+                    values=solved_result.values,
+                    is_coroutine=is_coroutine,
+                )
+
+.venv\Lib\site-packages\fastapi\routing.py:706: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dependant = Dependant(path_params=[ModelField(field_info=Path(PydanticUndefined), name='exam_id', mode='validation', config=None)]...wn_oauth_scopes=None, parent_oauth_scopes=None, use_cache=True, path='/api/v1/exams/{exam_id}/start', scope='function')
+values = {'db': <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x000002F3D50D9950>, 'current_student': <app.models.user.Student object at 0x000002F3D50D9450>, 'exam_id': UUID('f840d230-0b75-4b5f-b52b-c1aec8afe38b')}
+is_coroutine = True
+
+    async def run_endpoint_function(
+        *, dependant: Dependant, values: dict[str, Any], is_coroutine: bool
+    ) -> Any:
+        # Only called by get_request_handler. Has been split into its own function to
+        # facilitate profiling endpoints, since inner functions are harder to profile.
+        assert dependant.call is not None, "dependant.call must be a function"
+    
+        if is_coroutine:
+>           return await dependant.call(**values)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\fastapi\routing.py:352: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+db = <sqlalchemy.ext.asyncio.session.AsyncSession object at 0x000002F3D50D9950>
+exam_id = UUID('f840d230-0b75-4b5f-b52b-c1aec8afe38b')
+current_student = <app.models.user.Student object at 0x000002F3D50D9450>
+
+    @router.post("/{exam_id}/start", response_model=ExamAttemptResponse)
+    async def start_exam(
+        *,
+        db: SessionDep,
+        exam_id: uuid.UUID,
+        current_student: Student = Depends(require_role([RoleType.STUDENT]))
+    ) -> Any:
+        """
+        Start the exam timer. Returns the full attempt including questions.
+        """
+        exam = await exam_engine.start_exam(db=db, exam_id=exam_id, student_id=current_student.id)
+    
+        # We must construct ExamAttemptResponse to include questions (which omit correct answers)
+>       return ExamAttemptResponse(
+            id=exam.id,
+            subject_id=exam.subject_id,
+            test_type=exam.test_type,
+            difficulty_level=exam.difficulty_level,
+            total_marks=exam.total_marks,
+            duration_minutes=exam.duration_minutes,
+            status=exam.status,
+            started_at=exam.started_at,
+            expires_at=exam.expires_at,
+            submitted_at=exam.submitted_at,
+            questions=exam.questions,
+            saved_answers=[]
+        )
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for ExamAttemptResponse
+E       questions.0.options
+E         Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/list_type
+E       questions.1.options
+E         Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/list_type
+
+app\api\routes\exams.py:70: ValidationError
+---------------------------- Captured stderr call -----------------------------
+2026-08-22 09:26:03,496 - httpx - INFO - HTTP Request: POST http://test/api/v1/exams "HTTP/1.1 201 Created"
+2026-08-22 09:26:03,581 - app.main - ERROR - Unexpected error: 2 validation errors for ExamAttemptResponse
+questions.0.options
+  Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/list_type
+questions.1.options
+  Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/list_type
+Traceback (most recent call last):
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1780, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 2789, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1791, in _handle_selected
+    await route.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1780, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 2789, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1800, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1279, in handle
+    await app(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\api\routes\exams.py", line 70, in start_exam
+    return ExamAttemptResponse(
+        id=exam.id,
+    ...<10 lines>...
+        saved_answers=[]
+    )
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\pydantic\main.py", line 263, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+pydantic_core._pydantic_core.ValidationError: 2 validation errors for ExamAttemptResponse
+questions.0.options
+  Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/list_type
+questions.1.options
+  Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/list_type
+------------------------------ Captured log call ------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://test/api/v1/exams "HTTP/1.1 201 Created"
+ERROR    app.main:main.py:37 Unexpected error: 2 validation errors for ExamAttemptResponse
+questions.0.options
+  Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/list_type
+questions.1.options
+  Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/list_type
+Traceback (most recent call last):
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\middleware\cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1780, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 2789, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1791, in _handle_selected
+    await route.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1780, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 2789, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1800, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1279, in handle
+    await app(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 352, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\api\routes\exams.py", line 70, in start_exam
+    return ExamAttemptResponse(
+        id=exam.id,
+    ...<10 lines>...
+        saved_answers=[]
+    )
+  File "C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\pydantic\main.py", line 263, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+pydantic_core._pydantic_core.ValidationError: 2 validation errors for ExamAttemptResponse
+questions.0.options
+  Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/list_type
+questions.1.options
+  Input should be a valid list [type=list_type, input_value={'A': 'Option 1', 'B': 'O...ion 3', 'D': 'Option 4'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/list_type
+============================== warnings summary ===============================
+app\schemas\question.py:48
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\question.py:48: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class QuestionResponseAdmin(QuestionBase):
+
+app\schemas\question.py:60
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\question.py:60: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class QuestionResponseStudent(QuestionBase):
+
+app\schemas\exam.py:17
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\exam.py:17: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class MockTestResponse(BaseModel):
+
+app\schemas\exam.py:45
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\exam.py:45: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AnswerResponse(BaseModel):
+
+app\schemas\result.py:6
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\result.py:6: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class EvaluationResponse(BaseModel):
+
+app\schemas\result.py:30
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\result.py:30: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class ResultResponse(BaseModel):
+
+app\schemas\practical.py:18
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\practical.py:18: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class ExperimentResponse(ExperimentBase):
+
+app\schemas\practical.py:32
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\practical.py:32: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class PracticalSessionResponse(BaseModel):
+
+app\schemas\practical.py:56
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\practical.py:56: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class PracticalEvaluationResponse(BaseModel):
+
+app\schemas\practical.py:64
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\practical.py:64: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class PracticalSubmissionResponse(BaseModel):
+
+app\schemas\viva.py:18
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\viva.py:18: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class VivaAnswerResponse(BaseModel):
+
+app\schemas\viva.py:31
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\viva.py:31: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class VivaEvaluationResponse(BaseModel):
+
+app\schemas\viva.py:42
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\viva.py:42: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class VivaSessionResponse(BaseModel):
+
+app\schemas\ai.py:20
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\ai.py:20: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIGenerationJobResponse(BaseModel):
+
+app\schemas\plan.py:19
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\plan.py:19: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class StudyPlanResponse(BaseModel):
+
+.venv\Lib\site-packages\pydantic\_internal\_config.py:386
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\pydantic\_internal\_config.py:386: UserWarning: Valid config keys have changed in V2:
+  * 'orm_mode' has been renamed to 'from_attributes'
+    warnings.warn(message, UserWarning)
+
+app\schemas\plan.py:30
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\plan.py:30: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class RecommendationResponse(BaseModel):
+
+app\main.py:52
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\main.py:52: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv\Lib\site-packages\fastapi\applications.py:4681
+.venv\Lib\site-packages\fastapi\applications.py:4681
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\applications.py:4681: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+app\main.py:56
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\main.py:56: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/exams/test_exams.py::test_exam_flow
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\services\exam.py:99: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    exam.started_at = datetime.utcnow()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/exams/test_exams.py::test_exam_flow - pydantic_core._pydantic_co...
+======================= 1 failed, 23 warnings in 0.75s ========================

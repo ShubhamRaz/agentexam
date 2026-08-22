@@ -30,9 +30,13 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         </NavLink>
 
         <div className="nav-section">Preparation</div>
-        <NavLink to="/materials" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+        <NavLink to="/upload-material" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <i className="fas fa-upload"></i>
-          <span>Materials &amp; Analysis</span>
+          <span>Upload Material</span>
+        </NavLink>
+        <NavLink to="/materials" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <i className="fas fa-folder-open"></i>
+          <span>My Materials</span>
         </NavLink>
         <NavLink to="/syllabus" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <i className="fas fa-book"></i>
@@ -42,6 +46,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
           <i className="fas fa-history"></i>
           <span>PYQs</span>
         </NavLink>
+
 
         <div className="nav-section">Evaluation</div>
         <NavLink to="/exams" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>

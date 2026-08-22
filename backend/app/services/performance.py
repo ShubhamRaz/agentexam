@@ -22,7 +22,7 @@ class PerformanceService:
             select(
                 Question.topic_id,
                 Topic.name.label("topic_name"),
-                Topic.subject_id,
+                Question.subject_id,
                 func.count(Answer.id).label("attempts"),
                 func.sum(Evaluation.marks_obtained).label("total_obtained"),
                 func.sum(Question.marks).label("total_max")
@@ -40,7 +40,7 @@ class PerformanceService:
         if topic_id:
             stmt = stmt.where(Question.topic_id == topic_id)
             
-        stmt = stmt.group_by(Question.topic_id, Topic.name, Topic.subject_id)
+        stmt = stmt.group_by(Question.topic_id, Topic.name, Question.subject_id)
         
         result = await db.execute(stmt)
         return result.all()

@@ -18,7 +18,7 @@ class RAGService:
         self.embedding_provider = get_embedding_provider(
             provider_type=settings.EMBEDDING_PROVIDER,
             model_name=settings.EMBEDDING_MODEL,
-            api_key=settings.AI_API_KEY,
+            api_key=settings.get_ai_api_key,
             base_url=settings.AI_BASE_URL
         )
         self.chunk_size = settings.CHUNK_SIZE
@@ -72,11 +72,12 @@ class RAGService:
             chunk = DocumentChunk(
                 document_id=material.id,
                 subject_id=material.subject_id,
+                uploaded_by=material.uploaded_by,  # per-student scope (SRS §5.3)
                 content=chunk_text,
                 embedding=embedding,
                 chunk_index=i,
                 metadata_={
-                    "source_type": material.material_type.value,
+                    "source_type": getattr(material.material_type, "value", str(material.material_type)),
                     "title": material.title
                 }
             )
@@ -86,23 +87,32 @@ class RAGService:
         await db.flush()
         logger.info(f"RAG: Indexed {len(chunks)} chunks for document {material.id}")
 
-    async def search(self, db: AsyncSession, query: str, subject_id: uuid.UUID, top_k: int = 5, threshold: float = 0.7) -> List[DocumentChunk]:
+    async def search(
+        self,
+        db: AsyncSession,
+        query: str,
+        subject_id: uuid.UUID,
+        top_k: int = 5,
+        threshold: float = 0.7,
+        uploader_id: Optional[uuid.UUID] = None,
+    ) -> List[DocumentChunk]:
         """
         Perform semantic search using pgvector's cosine distance.
+        When uploader_id is provided only chunks from that student's materials are returned.
         """
         query_embedding = await self.embedding_provider.embed_query(query)
         
-        # Cosine distance operator is `<=>`.
-        # Distance = 1 - cosine_similarity. So lower distance is better.
         stmt = (
             select(DocumentChunk)
             .where(DocumentChunk.subject_id == subject_id)
             .order_by(DocumentChunk.embedding.cosine_distance(query_embedding))
             .limit(top_k)
         )
+
+        if uploader_id is not None:
+            stmt = stmt.where(DocumentChunk.uploaded_by == uploader_id)
         
         result = await db.execute(stmt)
-        # We could also apply distance thresholding if needed, but we'll stick to top_k for simplicity
         return list(result.scalars().all())
 
     def build_context(self, chunks: List[DocumentChunk]) -> str:

@@ -1,0 +1,148 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.14, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend
+plugins: anyio-4.14.2, asyncio-1.4.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/questions/test_questions.py::test_admin_can_create_and_read FAILED [100%]
+
+================================== FAILURES ===================================
+_______________________ test_admin_can_create_and_read ________________________
+
+auth_client_admin = <httpx.AsyncClient object at 0x00000200B4762510>
+auth_client_student = <httpx.AsyncClient object at 0x00000200B4762510>
+demo_subject_id = '46ee3581-e0b5-416d-94be-1638be74a062'
+
+    @pytest.mark.asyncio
+    async def test_admin_can_create_and_read(auth_client_admin, auth_client_student, demo_subject_id):
+        if not demo_subject_id:
+            pytest.skip("No demo subject found")
+    
+        # Admin creates question
+        response = await auth_client_admin.post("/api/v1/questions", json={
+            "subject_id": demo_subject_id,
+            "question_type": "MCQ",
+            "question_text": "What is Python?",
+            "marks": 5,
+            "difficulty_level": "EASY",
+            "options": [
+                {"id": "A", "text": "A language", "is_correct": True},
+                {"id": "B", "text": "A snake", "is_correct": False}
+            ],
+            "correct_answer": "A",
+            "explanation": "Python is a language."
+        })
+    
+>       assert response.status_code == 201
+E       assert 403 == 201
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests\questions\test_questions.py:37: AssertionError
+---------------------------- Captured stderr call -----------------------------
+2026-08-22 09:32:52,908 - httpx - INFO - HTTP Request: POST http://test/api/v1/questions "HTTP/1.1 403 Forbidden"
+------------------------------ Captured log call ------------------------------
+INFO     httpx:_client.py:1740 HTTP Request: POST http://test/api/v1/questions "HTTP/1.1 403 Forbidden"
+============================== warnings summary ===============================
+app\schemas\question.py:48
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\question.py:48: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class QuestionResponseAdmin(QuestionBase):
+
+app\schemas\question.py:60
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\question.py:60: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class QuestionResponseStudent(QuestionBase):
+
+app\schemas\exam.py:17
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\exam.py:17: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class MockTestResponse(BaseModel):
+
+app\schemas\exam.py:45
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\exam.py:45: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AnswerResponse(BaseModel):
+
+app\schemas\result.py:6
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\result.py:6: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class EvaluationResponse(BaseModel):
+
+app\schemas\result.py:30
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\result.py:30: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class ResultResponse(BaseModel):
+
+app\schemas\practical.py:18
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\practical.py:18: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class ExperimentResponse(ExperimentBase):
+
+app\schemas\practical.py:32
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\practical.py:32: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class PracticalSessionResponse(BaseModel):
+
+app\schemas\practical.py:56
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\practical.py:56: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class PracticalEvaluationResponse(BaseModel):
+
+app\schemas\practical.py:64
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\practical.py:64: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class PracticalSubmissionResponse(BaseModel):
+
+app\schemas\viva.py:18
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\viva.py:18: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class VivaAnswerResponse(BaseModel):
+
+app\schemas\viva.py:31
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\viva.py:31: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class VivaEvaluationResponse(BaseModel):
+
+app\schemas\viva.py:42
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\viva.py:42: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class VivaSessionResponse(BaseModel):
+
+app\schemas\ai.py:20
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\ai.py:20: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AIGenerationJobResponse(BaseModel):
+
+app\schemas\plan.py:19
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\plan.py:19: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class StudyPlanResponse(BaseModel):
+
+.venv\Lib\site-packages\pydantic\_internal\_config.py:386
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\pydantic\_internal\_config.py:386: UserWarning: Valid config keys have changed in V2:
+  * 'orm_mode' has been renamed to 'from_attributes'
+    warnings.warn(message, UserWarning)
+
+app\schemas\plan.py:30
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\schemas\plan.py:30: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class RecommendationResponse(BaseModel):
+
+app\main.py:52
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\main.py:52: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv\Lib\site-packages\fastapi\applications.py:4681
+.venv\Lib\site-packages\fastapi\applications.py:4681
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\.venv\Lib\site-packages\fastapi\applications.py:4681: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+app\main.py:56
+  C:\Users\SHUBHAM RAJ\Desktop\FIVE\AgentExam\backend\app\main.py:56: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/questions/test_questions.py::test_admin_can_create_and_read - as...
+======================= 1 failed, 21 warnings in 0.32s ========================

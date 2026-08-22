@@ -24,3 +24,6 @@ api_router.include_router(chat.router, prefix="/ai/chat", tags=["chat"])
 api_router.include_router(performance.router, prefix="/performance", tags=["performance"])
 from app.api.routes import plan
 api_router.include_router(plan.router, prefix="/study-plan", tags=["study_plan"])
+# Task 3 — Academic data analytics
+from app.api.routes import academic_analytics
+api_router.include_router(academic_analytics.router, prefix="/academic-analytics", tags=["academic_analytics"])
