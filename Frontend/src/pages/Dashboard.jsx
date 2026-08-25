@@ -1,202 +1,294 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import ProgressRing from '../components/ui/ProgressRing';
-import { getPerformanceOverview } from '../services/performance';
-import { getReadiness } from '../services/performance';
-import { getResults } from '../services/results';
-import { useAuth } from '../context/AuthContext';
+// ============================================
+// AGENTEXAM — Dashboard Page
+// ============================================
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  Trophy, Flame, BookOpen, Clock, TrendingUp, AlertTriangle,
+  ChevronRight, Target, CalendarCheck, CheckCircle2, Sparkles, Zap, ArrowRight
+} from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { Card, Badge, ProgressBar, ProgressCircle, StatCard, AIBadge, Button, PageLoading } from '../components/ui';
+import { getDashboard } from '../services/performance';
+import { getCurrentUser } from '../services/auth';
+import { getGreeting, getScoreColor, getScoreLabel } from '../utils/helpers';
 
-/**
- * Dashboard — connected to real backend APIs:
- *   GET /api/v1/performance/me
- *   GET /api/v1/performance/me/readiness
- *   GET /api/v1/results
- *
- * Falls back gracefully if data is unavailable (e.g., new user with no exam history).
- */
-const Dashboard = () => {
-  const { user } = useAuth();
-  const [overview, setOverview] = useState(null);
-  const [readiness, setReadiness] = useState(null);
-  const [recentResults, setRecentResults] = useState([]);
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [completedTasks, setCompletedTasks] = useState(new Set());
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [overviewData, readinessData, resultsData] = await Promise.all([
-          getPerformanceOverview().catch(() => null),
-          getReadiness().catch(() => null),
-          getResults({ limit: 4 }).catch(() => ({ items: [] })),
-        ]);
-        setOverview(overviewData);
-        setReadiness(readinessData);
-        setRecentResults(resultsData?.items || []);
-      } finally {
-        setLoading(false);
+    Promise.all([getDashboard(), getCurrentUser().catch(() => null)]).then(([d, user]) => {
+      if (user && d.student) {
+        d.student.name = user.name;
       }
-    };
-    fetchData();
+      setData(d);
+      setLoading(false);
+      // Pre-mark completed tasks
+      const completed = new Set();
+      d.todayTasks?.forEach(t => { if (t.completed) completed.add(t.id); });
+      setCompletedTasks(completed);
+    });
   }, []);
 
-  const readinessScore = readiness?.readiness_score != null ? Math.round(readiness.readiness_score) : null;
-  const readinessStatus = readiness?.status ?? 'INSUFFICIENT_DATA';
-  const overallAccuracy = overview?.overall_accuracy != null ? Math.round(overview.overall_accuracy) : null;
-  const weakTopicCount = overview?.weak_topics?.length ?? 0;
-  const strongTopicCount = overview?.strong_topics?.length ?? 0;
-
-  const getReadinessColor = (status) => {
-    if (status === 'HIGH') return '#22c55e';
-    if (status === 'MODERATE') return '#eab308';
-    if (status === 'LOW') return '#ef4444';
-    return '#6b7280';
+  const toggleTask = (taskId) => {
+    setCompletedTasks(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
   };
 
+  if (loading) return <PageLoading />;
+
+  const { student, readinessScore, daysLeft, examDate, recentTests, recentActivity, todayTasks, weakTopics, subjectPerformance } = data;
+
+  const performanceData = [
+    { name: 'Week 1', score: 55 }, { name: 'Week 2', score: 62 },
+    { name: 'Week 3', score: 65 }, { name: 'Week 4', score: 72 },
+    { name: 'Week 5', score: 68 }, { name: 'Week 6', score: 75 },
+  ];
+
   return (
-    <div className="dashboard">
-      {/* Readiness Card */}
-      <div className="readiness-card mb-8">
-        <div className="readiness-left">
-          <ProgressRing
-            size={80}
-            strokeWidth={8}
-            percentage={readinessScore ?? 0}
-            color={getReadinessColor(readinessStatus)}
-          />
-          <div className="readiness-text">
-            <h3>Exam Readiness: {' '}
-              {readinessScore != null
-                ? <span style={{ color: getReadinessColor(readinessStatus) }}>{readinessScore}%</span>
-                : <span style={{ color: '#6b7280' }}>No data yet</span>
-              }
-            </h3>
-            {readinessStatus === 'INSUFFICIENT_DATA'
-              ? <p>Take at least 5 assessments to see your readiness score.</p>
-              : readiness?.recommendations?.[0]
-                ? <p>{readiness.recommendations[0].message}</p>
-                : <p>Keep up the great work!</p>
-            }
+    <div className="animate-fade-in-up">
+      {/* Greeting */}
+      <div style={{ marginBottom: 'var(--space-6)' }}>
+        <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 'var(--font-bold)' }}>
+          {getGreeting()}, {student.name.split(' ')[0]} 👋
+        </h2>
+        <p style={{ color: 'var(--color-text-secondary)', marginTop: 'var(--space-1)' }}>
+          {daysLeft} days until your exam. Let&apos;s make today count!
+        </p>
+      </div>
+
+      {/* Readiness Hero Card */}
+      <div className="dashboard-readiness" style={{ marginBottom: 'var(--space-8)' }}>
+        <div className="dashboard-readiness-info">
+          <div className="dashboard-readiness-title">
+            <Sparkles size={16} style={{ display: 'inline', marginRight: '6px' }} />
+            Exam Readiness
+          </div>
+          <h2 className="dashboard-readiness-heading">
+            {getScoreLabel(readinessScore)}
+          </h2>
+          <p className="dashboard-readiness-sub">
+            You're making good progress! Focus on weak topics to boost your score.
+          </p>
+          <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => navigate('/readiness')}
+              style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white' }}
+            >
+              View Details <ChevronRight size={16} />
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => navigate('/exam')}
+              style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white' }}
+            >
+              Start Practice <Zap size={16} />
+            </Button>
           </div>
         </div>
-        <div className="readiness-action">
-          <Link to="/exams" className="btn btn-primary"><i className="fas fa-play"></i> Start Mock Test</Link>
-          <Link to="/performance" className="btn btn-outline-light"><i className="fas fa-chart-line"></i> View Report</Link>
+        <div className="readiness-circle-wrapper">
+          <ProgressCircle value={readinessScore} size={160} strokeWidth={10} label="Ready" />
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid-3col mb-8">
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-file-alt text-blue-600 mr-2"></i>Overall Accuracy</h4>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold">
-              {overallAccuracy != null ? `${overallAccuracy}%` : '—'}
-            </span>
-          </div>
-          <div className="flex gap-4 mt-2 text-sm text-muted">
-            <span><span className="font-semibold text-success">{strongTopicCount}</span> strong topics</span>
-            <span><span className="font-semibold text-danger">{weakTopicCount}</span> weak topics</span>
-          </div>
-          <div className="quick-actions mt-4 flex gap-3">
-            <Link to="/exams" className="btn btn-primary btn-sm flex-1"><i className="fas fa-plus"></i> New Test</Link>
-            <Link to="/performance" className="btn btn-secondary btn-sm flex-1"><i className="fas fa-chart-line"></i> Analytics</Link>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-flask text-purple-600 mr-2"></i>Practical / Viva</h4>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold">{recentResults.length}</span>
-            <span className="text-sm text-light">recent results</span>
-          </div>
-          <div className="quick-actions mt-4 flex gap-3">
-            <Link to="/viva" className="btn btn-purple btn-sm flex-1"><i className="fas fa-microphone"></i> Start Viva</Link>
-            <Link to="/practical" className="btn btn-secondary btn-sm flex-1"><i className="fas fa-code"></i> Lab</Link>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-tasks text-warning mr-2"></i>Study Plan</h4>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold">{weakTopicCount}</span>
-            <span className="text-sm text-light">topics to review</span>
-          </div>
-          <div className="flex gap-4 mt-2 text-sm text-muted">
-            <span><span className="font-semibold text-danger">{weakTopicCount}</span> weak</span>
-          </div>
-          <div className="quick-actions mt-4 flex gap-3">
-            <Link to="/study-plan" className="btn btn-secondary btn-sm flex-1"><i className="fas fa-eye"></i> View Plan</Link>
-          </div>
-        </div>
+      {/* Stats Row */}
+      <div className="dashboard-stats stagger-children" style={{ marginBottom: 'var(--space-8)' }}>
+        <StatCard
+          icon={Flame}
+          iconBg="var(--color-warning-light)"
+          iconColor="var(--color-warning-dark)"
+          label="Study Streak"
+          value={`${student.streak} days`}
+          change="+2 from last week"
+          changeType="positive"
+        />
+        <StatCard
+          icon={Trophy}
+          iconBg="var(--color-success-light)"
+          iconColor="var(--color-success-dark)"
+          label="Average Score"
+          value={`${student.averageScore}%`}
+          change="+5% this month"
+          changeType="positive"
+        />
+        <StatCard
+          icon={BookOpen}
+          iconBg="var(--color-primary-100)"
+          iconColor="var(--color-primary)"
+          label="Tests Completed"
+          value={student.testsCompleted}
+        />
+        <StatCard
+          icon={Clock}
+          iconBg="var(--color-accent-light)"
+          iconColor="var(--color-accent-dark)"
+          label="Study Hours"
+          value={`${student.totalStudyHours}h`}
+          change="+12h this week"
+          changeType="positive"
+        />
       </div>
 
-      {/* Weak Topics + Recent Results */}
-      <div className="grid-2col mb-8">
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-triangle-exclamation text-danger mr-2"></i>Weak Topics</h4>
-            <Link to="/performance" className="link">View all</Link>
-          </div>
-          <div>
-            {overview?.weak_topics?.length > 0
-              ? overview.weak_topics.map(t => (
-                <div className="topic-bar" key={t.topic_id}>
-                  <span className="label font-medium" style={{ width: '120px' }}>{t.topic_name}</span>
-                  <div className="track flex-1 bg-input rounded-full h-2 overflow-hidden mx-3">
-                    <div className="fill h-full rounded-full fill-danger" style={{ width: `${Math.round(t.accuracy)}%` }}></div>
+      {/* Main Content Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-6)' }}>
+        {/* Today's Tasks */}
+        <Card>
+          <Card.Header>
+            <div>
+              <h3 className="card-title">Today&apos;s Study Plan</h3>
+              <p className="card-subtitle">{completedTasks.size} of {todayTasks.length} tasks completed</p>
+            </div>
+            <Link to="/study-plan" className="section-action">View all <ChevronRight size={14} /></Link>
+          </Card.Header>
+          <Card.Body style={{ padding: 0 }}>
+            {todayTasks.map(task => (
+              <div key={task.id} className="study-task-item">
+                <button
+                  className={`study-task-checkbox ${completedTasks.has(task.id) ? 'completed' : ''}`}
+                  onClick={() => toggleTask(task.id)}
+                  aria-label={completedTasks.has(task.id) ? 'Mark incomplete' : 'Mark complete'}
+                >
+                  {completedTasks.has(task.id) && <CheckCircle2 size={14} />}
+                </button>
+                <div className="study-task-info">
+                  <div className={`study-task-title ${completedTasks.has(task.id) ? 'completed' : ''}`}>
+                    {task.title}
                   </div>
-                  <span className="pct text-sm font-semibold w-10 text-right text-danger">{Math.round(t.accuracy)}%</span>
+                  <div className="study-task-meta">{task.subject}</div>
                 </div>
-              ))
-              : <p className="text-sm text-muted p-2">No weak topics yet! Complete some exams.</p>
-            }
-          </div>
-        </div>
+                <Badge variant={task.priority === 'high' ? 'danger' : task.priority === 'medium' ? 'warning' : 'success'}>
+                  {task.priority}
+                </Badge>
+                <span className="study-task-time">{task.duration}</span>
+              </div>
+            ))}
+          </Card.Body>
+        </Card>
 
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-history text-blue-600 mr-2"></i>Recent Results</h4>
-            <Link to="/results" className="link">All results</Link>
-          </div>
-          <div className="mock-preview flex flex-col gap-3">
-            {recentResults.length > 0
-              ? recentResults.map(res => {
-                const pct = Math.round(res.percentage);
-                const borderClass = pct >= 80 ? 'border-l-success' : pct >= 60 ? 'border-l-warning' : 'border-l-danger';
-                const scoreClass = pct >= 80 ? 'text-success' : pct >= 60 ? 'text-warning' : 'text-danger';
-                return (
-                  <div key={res.id} className={`mock-row flex items-center gap-3 p-3 bg-input rounded-md border-l-4 ${borderClass}`}>
-                    <span className="icon text-primary text-lg"><i className="fas fa-file-alt"></i></span>
-                    <div className="detail flex-1">
-                      <div className="name text-sm font-medium">Exam Result</div>
-                      <div className="sub text-xs text-light mt-0.5">
-                        {res.obtained_marks}/{res.total_marks} · {res.pass_status ? 'Passed' : 'Failed'}
-                      </div>
-                    </div>
-                    <span className={`score font-bold text-lg ${scoreClass}`}>{pct}%</span>
+        {/* Performance Chart */}
+        <Card>
+          <Card.Header>
+            <div>
+              <h3 className="card-title">Score Trend</h3>
+              <p className="card-subtitle">Your performance over the last 6 weeks</p>
+            </div>
+            <Link to="/performance" className="section-action">Details <ChevronRight size={14} /></Link>
+          </Card.Header>
+          <Card.Body>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={performanceData}>
+                <defs>
+                  <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 12 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 12 }} domain={[40, 100]} />
+                <Tooltip
+                  contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '13px' }}
+                />
+                <Area type="monotone" dataKey="score" stroke="var(--color-primary)" strokeWidth={2.5} fill="url(#scoreGrad)" dot={{ fill: 'var(--color-primary)', strokeWidth: 2, r: 4 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card.Body>
+        </Card>
+
+        {/* Subject Performance */}
+        <Card>
+          <Card.Header>
+            <h3 className="card-title">Subject Performance</h3>
+          </Card.Header>
+          <Card.Body>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+              {subjectPerformance.map(sub => (
+                <div key={sub.subject}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                    <span style={{ fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)' }}>{sub.subject}</span>
+                    <span style={{ fontWeight: 'var(--font-semibold)', color: getScoreColor(sub.score) }}>{sub.score}%</span>
                   </div>
-                );
-              })
-              : <p className="text-sm text-muted p-2">No exam results yet. Take a mock test!</p>
-            }
-          </div>
-        </div>
-      </div>
+                  <ProgressBar value={sub.score} />
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
+                    {sub.tests} tests taken · {sub.accuracy}% accuracy
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card.Body>
+          <Card.Footer>
+            <Link to="/performance" style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--font-medium)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              View detailed analytics <ArrowRight size={14} />
+            </Link>
+          </Card.Footer>
+        </Card>
 
-      {/* Footer */}
-      <div className="mt-8 pt-4 border-t border-light text-xs text-light flex justify-between flex-wrap gap-2">
-        <span>AgentExam v1.0 · AI-powered autonomous exam preparation</span>
-        <span><i className="fas fa-shield-alt mr-1"></i> Data encrypted · <i className="fas fa-lock mr-1"></i> Secure</span>
+        {/* Weak Topics */}
+        <Card>
+          <Card.Header>
+            <div>
+              <h3 className="card-title">
+                <AlertTriangle size={18} style={{ color: 'var(--color-warning)', marginRight: '8px', verticalAlign: 'middle' }} />
+                Weak Topics
+              </h3>
+              <p className="card-subtitle">Focus on these to improve your readiness</p>
+            </div>
+            <AIBadge>AI Identified</AIBadge>
+          </Card.Header>
+          <Card.Body>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              {weakTopics.map((wt, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)', padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-alt)' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-md)', background: 'var(--color-danger-light)', color: 'var(--color-danger)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 'var(--font-bold)', fontSize: 'var(--text-sm)' }}>
+                    {wt.score}%
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)' }}>{wt.topic}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)', marginTop: '2px' }}>{wt.subject}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', marginTop: '4px' }}>{wt.recommendation}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card.Body>
+          <Card.Footer>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/exam')}>
+              Practice Weak Topics <ArrowRight size={14} />
+            </Button>
+          </Card.Footer>
+        </Card>
+
+        {/* Recent Activity */}
+        <Card style={{ gridColumn: '1 / -1' }}>
+          <Card.Header>
+            <h3 className="card-title">Recent Activity</h3>
+          </Card.Header>
+          <Card.Body style={{ padding: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {recentActivity.map(activity => (
+                <div key={activity.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-4) var(--space-6)', borderBottom: '1px solid var(--color-border-light)' }}>
+                  <span style={{ fontSize: 'var(--text-xl)' }}>{activity.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 'var(--font-medium)' }}>{activity.title}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)' }}>{activity.time}</div>
+                  </div>
+                  {activity.score && <Badge variant="primary">{activity.score}</Badge>}
+                  {activity.duration && <Badge variant="neutral">{activity.duration}</Badge>}
+                </div>
+              ))}
+            </div>
+          </Card.Body>
+        </Card>
       </div>
     </div>
   );
-};
-
-export default Dashboard;
+}

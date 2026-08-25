@@ -1,377 +1,333 @@
-import React, { useState, useEffect, useRef } from 'react';
+// ============================================
+// AGENTEXAM — Theory Exam Page (Setup + Exam + Results)
+// ============================================
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getSubjects } from '../services/syllabus';
-import { createExam, startExam, saveAnswer, submitExam, evaluateExam, getExamResult } from '../services/exams';
+import {
+  Clock, ChevronLeft, ChevronRight, Flag, Send, AlertCircle,
+  CheckCircle2, BookOpen, Sparkles, Timer, ArrowRight, Zap
+} from 'lucide-react';
+import { Card, Button, Badge, Select, ProgressBar, ProgressCircle, Modal, AIBadge, ConfirmDialog, PageLoading } from '../components/ui';
+import { formatTime, classNames } from '../utils/helpers';
+import { useTimer } from '../hooks/useApp';
 
-/**
- * TheoryExam page — connected to:
- *   GET  /api/v1/subjects/ (subject selection)
- *   POST /api/v1/exams (create exam)
- *   POST /api/v1/exams/{id}/start (start timer, get questions)
- *   PUT  /api/v1/exams/{id}/answers/{question_id} (save answer, idempotent)
- *   POST /api/v1/exams/{id}/submit (finalize)
- *   POST /api/v1/results/exams/{id}/evaluate (trigger evaluation)
- *   GET  /api/v1/results/exams/{id}/result (get result)
- *
- * The frontend does NOT calculate scores. Backend evaluation is authoritative.
- */
+import { getSubjects } from '../services/academic';
+import { createExam, startTest, submitAnswer, submitTest } from '../services/exams';
+import { getResults } from '../services/results';
 
-const DIFFICULTY_OPTIONS = ['EASY', 'MEDIUM', 'HARD'];
+// ---- Exam Setup ----
+function ExamSetup({ onStart, subjects }) {
+  const [config, setConfig] = useState({ subjectId: subjects[0]?.id || '', difficulty: 'medium', questionCount: '10', duration: '30' });
 
-const TheoryExam = () => {
-  const navigate = useNavigate();
-  const [examState, setExamState] = useState('setup'); // setup | active | submitting | result
-  const [subjects, setSubjects] = useState([]);
-  const [config, setConfig] = useState({
-    subject_id: '',
-    difficulty_level: 'MEDIUM',
-    question_count: 10,
-    duration_minutes: 30,
-  });
+  return (
+    <div className="exam-setup-container animate-fade-in-up">
+      <Card>
+        <Card.Body style={{ padding: 'var(--space-8)' }}>
+          <div style={{ textAlign: 'center', marginBottom: 'var(--space-8)' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: 'var(--radius-xl)', background: 'var(--color-primary-100)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto var(--space-4)' }}>
+              <BookOpen size={28} />
+            </div>
+            <h2 className="exam-setup-title">Start Theory Exam</h2>
+            <p className="exam-setup-subtitle">Configure your practice test</p>
+          </div>
 
-  const [examId, setExamId] = useState(null);
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', maxWidth: '400px', margin: '0 auto' }}>
+            <Select
+              label="Subject"
+              options={subjects.map(s => ({ value: s.id, label: s.name }))}
+              value={config.subjectId}
+              onChange={e => setConfig({ ...config, subjectId: e.target.value })}
+            />
+            <Select
+              label="Difficulty"
+              options={[{ value: 'easy', label: 'Easy' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' }, { value: 'mixed', label: 'Mixed' }]}
+              value={config.difficulty}
+              onChange={e => setConfig({ ...config, difficulty: e.target.value })}
+            />
+            <Select
+              label="Number of Questions"
+              options={[{ value: '5', label: '5 Questions' }, { value: '10', label: '10 Questions' }, { value: '15', label: '15 Questions' }, { value: '20', label: '20 Questions' }]}
+              value={config.questionCount}
+              onChange={e => setConfig({ ...config, questionCount: e.target.value })}
+            />
+            <Select
+              label="Duration"
+              options={[{ value: '15', label: '15 minutes' }, { value: '30', label: '30 minutes' }, { value: '45', label: '45 minutes' }, { value: '60', label: '60 minutes' }]}
+              value={config.duration}
+              onChange={e => setConfig({ ...config, duration: e.target.value })}
+            />
+
+            <Button variant="primary" size="lg" className="w-full" onClick={() => onStart(config)} style={{ marginTop: 'var(--space-4)' }}>
+              <Zap size={18} /> Start Exam
+            </Button>
+          </div>
+        </Card.Body>
+      </Card>
+    </div>
+  );
+}
+
+// ---- Active Exam ----
+function ActiveExam({ config, onSubmit, subjects }) {
+  const [exam, setExam] = useState(null);
   const [questions, setQuestions] = useState([]);
-  const [currentQIndex, setCurrentQIndex] = useState(0);
-  const [savedAnswers, setSavedAnswers] = useState({});
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [currentQ, setCurrentQ] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [marked, setMarked] = useState(new Set());
+  const [showSubmit, setShowSubmit] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Timer state
-  const [timeLeft, setTimeLeft] = useState(0);
-  const timerRef = useRef(null);
-
-  // Load subjects on mount
   useEffect(() => {
-    getSubjects({ limit: 50 })
-      .then(data => {
-        setSubjects(data);
-        if (data.length > 0) setConfig(c => ({ ...c, subject_id: data[0].id }));
+    // Create and start exam
+    createExam(config)
+      .then(newExam => startTest(newExam.id))
+      .then(startedExam => {
+        setExam(startedExam);
+        setQuestions(startedExam.questions || []);
+        const loadedAnswers = {};
+        if (startedExam.saved_answers) {
+            startedExam.saved_answers.forEach(a => {
+                loadedAnswers[a.question_id] = a.answer_text;
+            });
+        }
+        setAnswers(loadedAnswers);
+        setLoading(false);
       })
-      .catch(() => {});
-  }, []);
+      .catch(err => {
+        console.error("Failed to start exam", err);
+        setLoading(false);
+      });
+  }, [config]);
 
-  // Timer countdown
-  useEffect(() => {
-    if (examState === 'active' && timeLeft > 0) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft(t => {
-          if (t <= 1) {
-            clearInterval(timerRef.current);
-            handleAutoSubmit();
-            return 0;
-          }
-          return t - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [examState]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totalSeconds = (Number(config.duration) || 30) * 60;
+  
+  const handleComplete = useCallback(() => {
+      if (exam) {
+        submitTest(exam.id).then(() => onSubmit(exam.id));
+      }
+  }, [exam, onSubmit]);
 
-  const formatTime = (secs) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const { seconds, isRunning, start } = useTimer(totalSeconds, { onComplete: handleComplete, autoStart: true });
+
+  if (loading) return <PageLoading />;
+  if (questions.length === 0) return <div>No questions available for this configuration.</div>;
+
+  const question = questions[currentQ];
+  const timerClass = seconds < 60 ? 'danger' : seconds < 300 ? 'warning' : '';
+
+  const setAnswer = (qId, answer) => {
+    setAnswers(prev => ({ ...prev, [qId]: answer }));
+    // Automatically save answer to backend
+    submitAnswer(exam.id, qId, answer).catch(e => console.error("Failed to save answer", e));
   };
+  
+  const toggleMark = (qId) => setMarked(prev => { const n = new Set(prev); if (n.has(qId)) n.delete(qId); else n.add(qId); return n; });
 
-  const handleStartExam = async () => {
-    if (!config.subject_id) return;
-    setLoading(true);
-    setError('');
-    try {
-      // Create exam
-      const exam = await createExam(config);
-      // Start exam (begins timer, returns questions)
-      const attempt = await startExam(exam.id);
-      setExamId(exam.id);
-      setQuestions(attempt.questions || []);
-      setTimeLeft((attempt.duration_minutes || config.duration_minutes) * 60);
-      setCurrentQIndex(0);
-      setSavedAnswers({});
-      setExamState('active');
-    } catch (err) {
-      setError(err.message || 'Failed to start exam. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const qType = (question.question_type || 'mcq').toLowerCase();
 
-  const handleSaveCurrentAnswer = async (questionId, answerData) => {
-    if (!examId) return;
-    try {
-      await saveAnswer(examId, questionId, { question_id: questionId, ...answerData });
-      setSavedAnswers(prev => ({ ...prev, [questionId]: answerData }));
-    } catch {
-      // Non-blocking — we still allow navigation
-    }
-  };
-
-  const handleAnswerChange = (question, val) => {
-    const answerData = question.question_type === 'MCQ' || question.question_type === 'MULTIPLE_CHOICE'
-      ? { selected_option_id: val }
-      : { answer_text: val };
-    setSavedAnswers(prev => ({ ...prev, [question.id]: answerData }));
-    handleSaveCurrentAnswer(question.id, answerData);
-  };
-
-  const handleSubmitExam = async () => {
-    if (!examId) return;
-    clearInterval(timerRef.current);
-    setExamState('submitting');
-    setLoading(true);
-    try {
-      await submitExam(examId);
-      await evaluateExam(examId);
-      const resultData = await getExamResult(examId);
-      setResult(resultData);
-      setExamState('result');
-    } catch (err) {
-      setError(err.message || 'Failed to submit exam. Please try again.');
-      setExamState('active');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAutoSubmit = async () => {
-    await handleSubmitExam();
-  };
-
-  // --- Setup Screen ---
-  if (examState === 'setup') {
-    return (
-      <div className="max-w-2xl mx-auto mt-8">
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-cog text-blue-600 mr-2"></i>Mock Test Setup</h4>
+  return (
+    <div className="exam-layout">
+      {/* Exam Header */}
+      <div className="exam-header">
+        <div className="exam-header-left">
+          <h2 className="exam-title">{subjects.find(s => s.id === config.subjectId)?.name || 'Exam'} — Mock Test</h2>
+          <Badge variant="neutral">Question {currentQ + 1} of {questions.length}</Badge>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+          <div className={classNames('exam-timer', timerClass)}>
+            <Clock size={16} />
+            {formatTime(seconds)}
           </div>
-          <div className="p-6">
-            {error && (
-              <div className="p-4 mb-4 rounded" style={{ background: '#fee2e2', color: '#991b1b' }}>
-                <i className="fas fa-exclamation-circle mr-2"></i>{error}
-              </div>
-            )}
+          <Button variant="danger" size="sm" onClick={() => setShowSubmit(true)}>
+            <Send size={14} /> Submit Test
+          </Button>
+        </div>
+      </div>
 
-            <div className="form-group">
-              <label className="form-label">Subject</label>
-              <select
-                className="form-select"
-                value={config.subject_id}
-                onChange={e => setConfig(c => ({ ...c, subject_id: e.target.value }))}
-              >
-                {subjects.length === 0
-                  ? <option value="">Loading subjects...</option>
-                  : subjects.map(s => <option key={s.id} value={s.id}>{s.name} ({s.code})</option>)
-                }
-              </select>
-            </div>
+      {/* Exam Content */}
+      <div className="exam-body">
+        <div className="exam-content" style={{ paddingRight: '300px' }}>
+          <div className="exam-question-number">
+            Question {currentQ + 1}
+            <span className="exam-question-type"><Badge variant={qType === 'mcq' ? 'info' : qType === 'short_answer' ? 'warning' : 'primary'}>{qType.toUpperCase()}</Badge></span>
+          </div>
+          <p className="exam-question-marks">{question.marks} marks</p>
+          <h3 className="exam-question-text">{question.question_text}</h3>
 
-            <div className="form-group">
-              <label className="form-label">Difficulty</label>
-              <select
-                className="form-select"
-                value={config.difficulty_level}
-                onChange={e => setConfig(c => ({ ...c, difficulty_level: e.target.value }))}
-              >
-                {DIFFICULTY_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-
-            <div className="grid-2col" style={{ marginBottom: '16px' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Number of Questions</label>
-                <select
-                  className="form-select"
-                  value={config.question_count}
-                  onChange={e => setConfig(c => ({ ...c, question_count: Number(e.target.value) }))}
+          {/* Answer Area */}
+          {qType === 'mcq' && (
+            <div className="mcq-options">
+              {question.options && question.options.map((opt, i) => (
+                <div key={i}
+                  className={classNames('mcq-option', answers[question.id] === opt.id && 'selected')}
+                  onClick={() => setAnswer(question.id, opt.id)}
                 >
-                  {[5, 10, 20].map(n => <option key={n} value={n}>{n} Questions</option>)}
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Duration</label>
-                <select
-                  className="form-select"
-                  value={config.duration_minutes}
-                  onChange={e => setConfig(c => ({ ...c, duration_minutes: Number(e.target.value) }))}
-                >
-                  {[15, 30, 45, 60].map(m => <option key={m} value={m}>{m} Minutes</option>)}
-                </select>
-              </div>
-            </div>
-
-            <button
-              className="btn btn-primary w-full mt-4"
-              onClick={handleStartExam}
-              disabled={loading || !config.subject_id}
-            >
-              {loading
-                ? <><i className="fas fa-spinner fa-spin mr-2"></i>Creating Exam...</>
-                : <><i className="fas fa-play mr-2"></i>Start Mock Test</>}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Submitting Screen ---
-  if (examState === 'submitting') {
-    return (
-      <div className="p-8 text-center text-muted">
-        <i className="fas fa-spinner fa-spin mr-2"></i>
-        Submitting and evaluating your exam. Please wait...
-      </div>
-    );
-  }
-
-  // --- Active Exam Screen ---
-  if (examState === 'active') {
-    const currentQ = questions[currentQIndex];
-    const savedAnswer = savedAnswers[currentQ?.id] || {};
-
-    return (
-      <div className="exam-interface max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="font-bold text-lg">
-            <i className="fas fa-question-circle text-blue-600 mr-2"></i>
-            Question {currentQIndex + 1} of {questions.length}
-          </h3>
-          <span className={`badge text-sm px-4 py-2 ${timeLeft <= 300 ? 'badge-danger' : 'badge-warning'}`}>
-            <i className="far fa-clock mr-1"></i> {formatTime(timeLeft)}
-          </span>
-        </div>
-
-        {error && (
-          <div className="p-3 mb-4 rounded" style={{ background: '#fee2e2', color: '#991b1b', fontSize: '14px' }}>
-            <i className="fas fa-exclamation-circle mr-2"></i>{error}
-          </div>
-        )}
-
-        {currentQ && (
-          <div className="card mb-6">
-            <div className="mb-4 flex justify-between">
-              <span className="badge badge-secondary">{currentQ.question_type || 'MCQ'}</span>
-              <span className="badge badge-primary">{currentQ.marks} mark(s)</span>
-            </div>
-            <h4 className="text-lg font-medium mb-6 text-main leading-relaxed">{currentQ.question_text}</h4>
-
-            {/* MCQ Options */}
-            {(currentQ.question_type === 'MCQ' || currentQ.question_type === 'MULTIPLE_CHOICE') && currentQ.options && (
-              <div className="flex flex-col gap-3">
-                {currentQ.options.map((opt) => (
-                  <label
-                    key={opt.id}
-                    className={`p-4 border rounded-md cursor-pointer flex items-center gap-3 transition-colors ${
-                      savedAnswer.selected_option_id === opt.id
-                        ? 'border-l-primary bg-blue-100 border-primary border-l-4'
-                        : 'border-light hover:bg-input'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name={`q-${currentQ.id}`}
-                      checked={savedAnswer.selected_option_id === opt.id}
-                      onChange={() => handleAnswerChange(currentQ, opt.id)}
-                      className="w-4 h-4"
-                    />
-                    <span className="font-medium text-sm">{opt.text}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-
-            {/* Short/Long answer */}
-            {(currentQ.question_type === 'SHORT_ANSWER' || currentQ.question_type === 'LONG_ANSWER' || currentQ.question_type === 'DESCRIPTIVE') && (
-              <textarea
-                className="form-input"
-                style={{ minHeight: currentQ.question_type === 'LONG_ANSWER' ? '200px' : '120px' }}
-                placeholder="Type your answer here..."
-                value={savedAnswer.answer_text || ''}
-                onChange={e => handleAnswerChange(currentQ, e.target.value)}
-              />
-            )}
-          </div>
-        )}
-
-        <div className="flex justify-between">
-          <button
-            className="btn btn-secondary"
-            disabled={currentQIndex === 0}
-            onClick={() => setCurrentQIndex(i => i - 1)}
-          >
-            <i className="fas fa-chevron-left"></i> Previous
-          </button>
-
-          {currentQIndex < questions.length - 1 ? (
-            <button className="btn btn-primary" onClick={() => setCurrentQIndex(i => i + 1)}>
-              Next Question <i className="fas fa-chevron-right"></i>
-            </button>
-          ) : (
-            <button className="btn btn-success" onClick={handleSubmitExam} disabled={loading}>
-              <i className="fas fa-check-double"></i> Submit Exam
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // --- Result Screen ---
-  if (examState === 'result' && result) {
-    const pct = Math.round(result.percentage);
-    const scoreColor = pct >= 80 ? '#22c55e' : pct >= 60 ? '#eab308' : '#ef4444';
-    return (
-      <div className="max-w-3xl mx-auto mt-8">
-        <div className="card text-center mb-6 py-8">
-          <i className={`fas fa-check-circle text-6xl mb-4 ${pct >= 60 ? 'text-success' : 'text-danger'}`}></i>
-          <h2 className="text-2xl font-bold mb-2">Test Completed!</h2>
-          <div className="text-5xl font-extrabold mb-2" style={{ color: scoreColor }}>
-            {result.obtained_marks}
-            <span className="text-2xl text-light"> / {result.total_marks}</span>
-          </div>
-          <div className="text-2xl font-bold mb-2" style={{ color: scoreColor }}>{pct}%</div>
-          {result.grade && <div className="badge badge-secondary mb-4">Grade: {result.grade}</div>}
-          <div className={`badge ${result.pass_status ? 'badge-success' : 'badge-danger'} px-4 py-2`}>
-            {result.pass_status ? 'PASSED' : 'NOT PASSED'}
-          </div>
-        </div>
-
-        {result.question_results?.length > 0 && (
-          <>
-            <h3 className="font-bold text-lg mb-4">
-              <i className="fas fa-list-check text-blue-600 mr-2"></i>Question Breakdown
-            </h3>
-            <div className="flex flex-col gap-3 mb-6">
-              {result.question_results.slice(0, 5).map((qr, i) => (
-                <div key={i} className="card p-4">
-                  <div className="flex justify-between items-start mb-2">
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-main)', flex: 1, marginRight: '12px' }}>
-                      {qr.question_text}
-                    </p>
-                    <span className="text-sm font-bold" style={{ color: qr.evaluation?.marks_obtained > 0 ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>
-                      {qr.evaluation?.marks_obtained ?? 0} / {qr.marks} marks
-                    </span>
-                  </div>
-                  {qr.evaluation?.feedback && (
-                    <p className="text-xs text-muted mt-1">{qr.evaluation.feedback}</p>
-                  )}
+                  <div className="mcq-option-indicator">{String.fromCharCode(65 + i)}</div>
+                  <span className="mcq-option-text">{opt.text}</span>
                 </div>
               ))}
             </div>
-          </>
+          )}
+
+          {qType === 'short_answer' && (
+            <textarea
+              className="form-textarea"
+              rows={4}
+              placeholder="Type your answer here..."
+              value={answers[question.id] || ''}
+              onChange={e => setAnswer(question.id, e.target.value)}
+            />
+          )}
+
+          {qType === 'long_answer' && (
+            <textarea
+              className="form-textarea"
+              rows={10}
+              placeholder="Write your detailed answer here..."
+              value={answers[question.id] || ''}
+              onChange={e => setAnswer(question.id, e.target.value)}
+              style={{ minHeight: '250px' }}
+            />
+          )}
+
+          {/* Navigation */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-6)' }}>
+            <Button variant="secondary" disabled={currentQ === 0} onClick={() => setCurrentQ(prev => prev - 1)}>
+              <ChevronLeft size={16} /> Previous
+            </Button>
+            <Button variant="ghost" onClick={() => toggleMark(question.id)} style={{ color: marked.has(question.id) ? 'var(--color-warning)' : 'var(--color-text-secondary)' }}>
+              <Flag size={16} /> {marked.has(question.id) ? 'Marked' : 'Mark for Review'}
+            </Button>
+            {currentQ < questions.length - 1 ? (
+              <Button variant="primary" onClick={() => setCurrentQ(prev => prev + 1)}>
+                Next <ChevronRight size={16} />
+              </Button>
+            ) : (
+              <Button variant="success" onClick={() => setShowSubmit(true)}>
+                <Send size={16} /> Submit Test
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Question Nav Sidebar */}
+        <div className="exam-nav">
+          <h4 className="exam-nav-title">Questions</h4>
+          <div className="exam-nav-grid">
+            {questions.map((q, i) => (
+              <button
+                key={q.id}
+                className={classNames(
+                  'exam-nav-btn',
+                  i === currentQ && 'current',
+                  answers[q.id] !== undefined && i !== currentQ && 'answered',
+                  marked.has(q.id) && 'marked'
+                )}
+                onClick={() => setCurrentQ(i)}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          <div className="exam-nav-legend">
+            <div className="exam-nav-legend-item"><div className="exam-nav-legend-dot" style={{ background: 'var(--color-primary)' }} /> Current</div>
+            <div className="exam-nav-legend-item"><div className="exam-nav-legend-dot" style={{ background: 'var(--color-success-light)', border: '1px solid var(--color-success)' }} /> Answered</div>
+            <div className="exam-nav-legend-item"><div className="exam-nav-legend-dot" style={{ background: 'var(--color-warning-light)', border: '1px solid var(--color-warning)' }} /> Marked</div>
+            <div className="exam-nav-legend-item"><div className="exam-nav-legend-dot" style={{ border: '1px solid var(--color-border)' }} /> Not visited</div>
+          </div>
+          <div style={{ marginTop: 'var(--space-6)' }}>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-2)' }}>Progress</div>
+            <ProgressBar value={Object.keys(answers).length} max={questions.length} showValue label={`${Object.keys(answers).length} / ${questions.length} answered`} />
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        isOpen={showSubmit}
+        onClose={() => setShowSubmit(false)}
+        onConfirm={handleComplete}
+        title="Submit Test?"
+        message={`You've answered ${Object.keys(answers).length} out of ${questions.length} questions. ${questions.length - Object.keys(answers).length > 0 ? `${questions.length - Object.keys(answers).length} questions are unanswered.` : 'All questions answered!'}`}
+        confirmText="Submit"
+        variant="primary"
+      />
+    </div>
+  );
+}
+
+// ---- Main Component ----
+export default function TheoryExam() {
+  const navigate = useNavigate();
+  const [phase, setPhase] = useState('setup'); // setup | exam | results
+  const [config, setConfig] = useState(null);
+  const [results, setResults] = useState(null);
+  
+  const [subjects, setSubjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getSubjects().then(data => {
+      setSubjects(data || []);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleStart = (cfg) => {
+    setConfig(cfg);
+    setPhase('exam');
+  };
+
+  const handleSubmit = (examId) => {
+    setLoading(true);
+    setPhase('results');
+    getResults(examId).then(data => {
+      setResults(data);
+      setLoading(false);
+    }).catch(err => {
+      console.error(err);
+      setLoading(false);
+    });
+  };
+
+  if (loading && phase !== 'exam') return <PageLoading />;
+
+  if (phase === 'exam' && config) {
+    return <ActiveExam config={config} onSubmit={handleSubmit} subjects={subjects} />;
+  }
+
+  if (phase === 'results' && results) {
+    return (
+      <div className="animate-fade-in-up">
+        {/* Score Card */}
+        <Card style={{ marginBottom: 'var(--space-6)' }}>
+          <Card.Body style={{ padding: 'var(--space-8)', textAlign: 'center' }}>
+            <div style={{ display: 'inline-flex', marginBottom: 'var(--space-4)' }}>
+              <CheckCircle2 size={48} color="var(--color-success)" />
+            </div>
+            <h2 style={{ fontSize: 'var(--text-2xl)', fontWeight: 'var(--font-bold)', marginBottom: 'var(--space-2)' }}>Test Completed!</h2>
+            <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--space-6)' }}>{subjects.find(s => s.id === results.subject_id)?.name} — {results.test_type}</p>
+            <ProgressCircle value={results.percentage || 0} size={140} strokeWidth={10} label="Score" />
+          </Card.Body>
+        </Card>
+
+        {results.analytics && (
+        <div className="grid-cols-2" style={{ marginBottom: 'var(--space-6)' }}>
+          <Card className="ai-card">
+            <Card.Header><h3 className="card-title"><Sparkles size={18} style={{ marginRight: '8px', color: 'var(--color-ai)' }} />AI Feedback</h3><AIBadge>AI Evaluated</AIBadge></Card.Header>
+            <Card.Body>
+              <p style={{ fontSize: 'var(--text-base)', lineHeight: 'var(--leading-relaxed)', color: 'var(--color-text-secondary)' }}>{results.analytics.improvement_suggestions}</p>
+            </Card.Body>
+          </Card>
+        </div>
         )}
 
-        <div className="text-center">
-          <button className="btn btn-secondary" onClick={() => { setExamState('setup'); setResult(null); setQuestions([]); }}>
-            <i className="fas fa-home"></i> Back to Setup
-          </button>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'center' }}>
+          <Button variant="secondary" onClick={() => setPhase('setup')}>Take Another Test</Button>
+          <Button variant="primary" onClick={() => navigate('/performance')}>View Performance <ArrowRight size={16} /></Button>
         </div>
       </div>
     );
   }
 
-  return null;
-};
-
-export default TheoryExam;
+  return <ExamSetup onStart={handleStart} subjects={subjects} />;
+}

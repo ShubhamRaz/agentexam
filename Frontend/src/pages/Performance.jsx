@@ -1,166 +1,135 @@
-import React, { useEffect, useState } from 'react';
-import { getPerformanceOverview, getTopicsPerformance } from '../services/performance';
-import { getResults } from '../services/results';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+// ============================================
+// AGENTEXAM — Performance Analytics Page
+// ============================================
+import { useState, useEffect } from 'react';
+import { TrendingUp, Target, BookOpen, Award, BarChart2 } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
+import { Card, Badge, StatCard, ProgressBar, Tabs, PageLoading, AIBadge } from '../components/ui';
+import { getPerformance } from '../services/performance';
+import { getScoreColor, getStatusColor } from '../utils/helpers';
 
-/**
- * Performance page — connected to:
- *   GET /api/v1/performance/me
- *   GET /api/v1/performance/me/topics
- *   GET /api/v1/results (for recent test history)
- */
-const Performance = () => {
-  const [overview, setOverview] = useState(null);
-  const [topicData, setTopicData] = useState([]);
-  const [results, setResults] = useState([]);
+export default function Performance() {
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const [overviewRes, topicsRes, resultsRes] = await Promise.all([
-          getPerformanceOverview(),
-          getTopicsPerformance(),
-          getResults({ limit: 5 }),
-        ]);
-        setOverview(overviewRes);
-        // Build chart data from real topic performance
-        setTopicData(topicsRes.map(t => ({
-          name: t.topic_name,
-          score: Math.round(t.accuracy),
-          accuracy: Math.round(t.accuracy),
-        })));
-        setResults(resultsRes.items || []);
-      } catch (err) {
-        setError(err.message || 'Failed to load performance data.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    getPerformance().then(d => { setData(d); setLoading(false); });
   }, []);
 
-  if (loading) {
-    return <div className="p-8 text-center text-muted"><i className="fas fa-spinner fa-spin mr-2"></i>Loading analytics...</div>;
-  }
+  if (loading) return <PageLoading />;
 
-  if (error) {
-    return (
-      <div className="p-8 text-center">
-        <div style={{ color: '#ef4444', marginBottom: '8px' }}><i className="fas fa-exclamation-triangle"></i></div>
-        <p className="text-muted">{error}</p>
-      </div>
-    );
-  }
+  const { overall, scoreTrend, accuracyTrend, subjectPerformance, topicPerformance, weakTopics } = data;
 
-  const getScoreColor = (pct) => {
-    if (pct >= 80) return 'text-success';
-    if (pct >= 60) return 'text-warning';
-    return 'text-danger';
-  };
+  const radarData = subjectPerformance.map(s => ({ subject: s.subject.split(' ')[0], score: s.score, accuracy: s.accuracy }));
 
   return (
-    <div className="performance-page max-w-5xl mx-auto">
-      <div className="flex justify-between items-end mb-8">
-        <div>
-          <h3 className="text-2xl font-bold">Performance Analytics</h3>
-          <p className="text-muted text-sm mt-1">Track your progress across topics and assessments.</p>
-        </div>
+    <div className="animate-fade-in-up">
+      {/* Stats */}
+      <div className="dashboard-stats stagger-children" style={{ marginBottom: 'var(--space-8)' }}>
+        <StatCard icon={BookOpen} iconBg="var(--color-primary-100)" iconColor="var(--color-primary)" label="Total Tests" value={overall.totalTests} />
+        <StatCard icon={Award} iconBg="var(--color-success-light)" iconColor="var(--color-success-dark)" label="Average Score" value={`${overall.averageScore}%`} change={`+${overall.improvement}% this month`} changeType="positive" />
+        <StatCard icon={Target} iconBg="var(--color-accent-light)" iconColor="var(--color-accent-dark)" label="Accuracy" value={`${overall.accuracy}%`} />
+        <StatCard icon={TrendingUp} iconBg="var(--color-warning-light)" iconColor="var(--color-warning-dark)" label="Study Hours" value={`${overall.studyHours}h`} />
       </div>
 
-      {/* Summary Cards */}
-      {overview && (
-        <div className="grid-3col mb-8">
-          <div className="card p-4 text-center">
-            <div className="text-3xl font-bold text-primary mb-1">{Math.round(overview.overall_accuracy)}%</div>
-            <div className="text-sm text-muted">Overall Accuracy</div>
-          </div>
-          <div className="card p-4 text-center">
-            <div className="text-3xl font-bold text-success mb-1">{overview.strong_topics?.length ?? 0}</div>
-            <div className="text-sm text-muted">Strong Topics</div>
-          </div>
-          <div className="card p-4 text-center">
-            <div className="text-3xl font-bold text-danger mb-1">{overview.weak_topics?.length ?? 0}</div>
-            <div className="text-sm text-muted">Weak Topics</div>
-          </div>
-        </div>
-      )}
+      {/* Charts Row */}
+      <div className="grid-cols-2" style={{ marginBottom: 'var(--space-6)' }}>
+        <Card>
+          <Card.Header><h3 className="card-title">Score Trend</h3></Card.Header>
+          <Card.Body>
+            <ResponsiveContainer width="100%" height={250}>
+              <AreaChart data={scoreTrend}>
+                <defs>
+                  <linearGradient id="scoreGrad2" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4F46E5" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="#4F46E5" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} domain={[30, 100]} />
+                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }} />
+                <Area type="monotone" dataKey="score" stroke="#4F46E5" strokeWidth={2.5} fill="url(#scoreGrad2)" dot={{ fill: '#4F46E5', r: 3 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card.Body>
+        </Card>
 
-      <div className="grid-2col mb-8">
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-chart-bar text-purple-600 mr-2"></i>Accuracy by Topic</h4>
-          </div>
-          {topicData.length > 0 ? (
-            <div style={{ width: '100%', height: 300, marginTop: '20px' }}>
-              <ResponsiveContainer>
-                <BarChart data={topicData} margin={{ top: 10, right: 30, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f6" vertical={false} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#7a9abb', fontSize: 11 }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#7a9abb', fontSize: 12 }} domain={[0, 100]} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', background: '#fff' }}
-                    cursor={{ fill: 'rgba(59,130,246,0.05)' }}
-                  />
-                  <Bar dataKey="accuracy" fill="#8b5cf6" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <p className="p-4 text-muted text-sm">No topic performance data available yet. Take some exams first.</p>
-          )}
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h4><i className="fas fa-triangle-exclamation text-danger mr-2"></i>Weak Topics</h4>
-          </div>
-          {overview?.weak_topics?.length > 0 ? (
-            <ul className="p-2" style={{ listStyle: 'none', padding: 0 }}>
-              {overview.weak_topics.map(t => (
-                <li key={t.topic_id} className="flex justify-between items-center p-3 border-b border-light last:border-0">
-                  <span className="text-sm font-medium">{t.topic_name}</span>
-                  <span className={`text-sm font-bold ${getScoreColor(t.accuracy)}`}>{Math.round(t.accuracy)}%</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="p-4 text-muted text-sm">No weak topics detected yet.</p>
-          )}
-        </div>
+        <Card>
+          <Card.Header><h3 className="card-title">Accuracy Trend</h3></Card.Header>
+          <Card.Body>
+            <ResponsiveContainer width="100%" height={250}>
+              <AreaChart data={accuracyTrend}>
+                <defs>
+                  <linearGradient id="accGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10B981" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} domain={[30, 100]} />
+                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }} />
+                <Area type="monotone" dataKey="accuracy" stroke="#10B981" strokeWidth={2.5} fill="url(#accGrad)" dot={{ fill: '#10B981', r: 3 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card.Body>
+        </Card>
       </div>
 
-      <div className="card">
-        <div className="card-header">
-          <h4><i className="fas fa-history text-blue-600 mr-2"></i>Recent Test Submissions</h4>
-        </div>
-        {results.length > 0 ? (
-          <div className="mock-preview mt-2">
-            {results.map((res) => {
-              const pct = Math.round(res.percentage);
-              const borderClass = pct >= 80 ? 'border-l-success' : pct >= 60 ? 'border-l-warning' : 'border-l-danger';
-              const scoreClass = pct >= 80 ? 'text-success' : pct >= 60 ? 'text-warning' : 'text-danger';
-              return (
-                <div key={res.id} className={`mock-row flex items-center gap-3 p-3 bg-input rounded-md border-l-4 ${borderClass}`}>
-                  <span className="icon text-primary text-lg"><i className="fas fa-file-alt"></i></span>
-                  <div className="detail flex-1">
-                    <div className="name text-sm font-medium">Exam Result</div>
-                    <div className="sub text-xs text-light mt-0.5">{res.obtained_marks}/{res.total_marks} marks · {res.pass_status ? 'Passed' : 'Failed'}</div>
+      <div className="grid-cols-2" style={{ marginBottom: 'var(--space-6)' }}>
+        {/* Subject Radar */}
+        <Card>
+          <Card.Header><h3 className="card-title">Subject Comparison</h3></Card.Header>
+          <Card.Body>
+            <ResponsiveContainer width="100%" height={280}>
+              <RadarChart data={radarData}>
+                <PolarGrid stroke="#E2E8F0" />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: '#0F172A', fontSize: 12 }} />
+                <Radar name="Score" dataKey="score" stroke="#4F46E5" fill="#4F46E5" fillOpacity={0.2} strokeWidth={2} />
+                <Radar name="Accuracy" dataKey="accuracy" stroke="#06B6D4" fill="#06B6D4" fillOpacity={0.1} strokeWidth={2} />
+                <Tooltip />
+              </RadarChart>
+            </ResponsiveContainer>
+          </Card.Body>
+        </Card>
+
+        {/* Topic Performance */}
+        <Card>
+          <Card.Header><h3 className="card-title">Topic Performance</h3><AIBadge>AI Analyzed</AIBadge></Card.Header>
+          <Card.Body>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {topicPerformance.map((tp, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                  <div style={{ width: '130px', fontSize: 'var(--text-sm)', fontWeight: 'var(--font-medium)' }}>{tp.topic}</div>
+                  <Badge variant="neutral" style={{ width: '36px', textAlign: 'center', fontSize: 'var(--text-xs)' }}>{tp.subject}</Badge>
+                  <div style={{ flex: 1 }}>
+                    <ProgressBar value={tp.score} size="sm" />
                   </div>
-                  <span className={`score font-bold text-lg ${scoreClass}`}>{pct}%</span>
+                  <Badge variant={getStatusColor(tp.status)}>{tp.score}%</Badge>
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="p-4 text-muted text-sm">No exam results yet. Take a theory exam to see your performance here.</p>
-        )}
+              ))}
+            </div>
+          </Card.Body>
+        </Card>
       </div>
+
+      {/* Weak Topics */}
+      <Card>
+        <Card.Header><h3 className="card-title">⚠️ Weak Topics — AI Recommendations</h3></Card.Header>
+        <Card.Body>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
+            {weakTopics.map((wt, i) => (
+              <div key={i} style={{ padding: 'var(--space-4)', background: 'var(--color-danger-light)', borderRadius: 'var(--radius-md)', borderLeft: '3px solid var(--color-danger)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                  <span style={{ fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-base)' }}>{wt.topic}</span>
+                  <Badge variant="danger">{wt.score}%</Badge>
+                </div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)', marginBottom: 'var(--space-2)' }}>{wt.subject}</div>
+                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>💡 {wt.recommendation}</p>
+              </div>
+            ))}
+          </div>
+        </Card.Body>
+      </Card>
     </div>
   );
-};
-
-export default Performance;
+}

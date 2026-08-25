@@ -1,66 +1,58 @@
-import React from 'react';
+// ============================================
+// AGENTEXAM — Main App with Routing
+// ============================================
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { ToastProvider } from './components/ui';
+import AppLayout from './layouts/AppLayout';
 
-// Layout
-import MainLayout from './components/layout/MainLayout';
-import ProtectedRoute from './components/layout/ProtectedRoute';
+// Auth pages
+import Login from './pages/auth/Login';
+import Signup from './pages/auth/Signup';
+import ForgotPassword from './pages/auth/ForgotPassword';
 
-// Auth pages (public)
-import Login from './pages/Login';
-import Register from './pages/Register';
-
-// Protected pages
+// App pages
 import Dashboard from './pages/Dashboard';
-import MaterialsList from './pages/MaterialsList';
-import UploadMaterial from './pages/UploadMaterial';
-import Syllabus from './pages/Syllabus';
-import PYQs from './pages/PYQs';
+import Materials from './pages/Materials';
+import SyllabusAnalysis from './pages/SyllabusAnalysis';
+import PYQAnalysis from './pages/PYQAnalysis';
 import TheoryExam from './pages/TheoryExam';
-import Results from './pages/Results';
-import Practical from './pages/Practical';
-import Viva from './pages/Viva';
+import PracticalExam from './pages/PracticalExam';
+import AIViva from './pages/AIViva';
 import Performance from './pages/Performance';
 import Readiness from './pages/Readiness';
 import StudyPlan from './pages/StudyPlan';
-import ProfileSettings from './pages/ProfileSettings';
+import Profile from './pages/Profile';
 
-function App() {
+export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Public routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+    <ToastProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Auth routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
 
-        {/* Protected routes — all nested under MainLayout */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <MainLayout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Dashboard />} />
-          <Route path="materials" element={<MaterialsList />} />
-          <Route path="upload-material" element={<UploadMaterial />} />
-          <Route path="syllabus" element={<Syllabus />} />
-          <Route path="pyqs" element={<PYQs />} />
-          <Route path="exams" element={<TheoryExam />} />
-          <Route path="results" element={<Results />} />
-          <Route path="practical" element={<Practical />} />
-          <Route path="viva" element={<Viva />} />
-          <Route path="performance" element={<Performance />} />
-          <Route path="readiness" element={<Readiness />} />
-          <Route path="study-plan" element={<StudyPlan />} />
-          <Route path="profile" element={<ProfileSettings />} />
-        </Route>
+          {/* App routes (with sidebar layout) */}
+          <Route element={<AppLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/materials" element={<Materials />} />
+            <Route path="/syllabus" element={<SyllabusAnalysis />} />
+            <Route path="/pyq-analysis" element={<PYQAnalysis />} />
+            <Route path="/exam" element={<TheoryExam />} />
+            <Route path="/practical" element={<PracticalExam />} />
+            <Route path="/viva" element={<AIViva />} />
+            <Route path="/performance" element={<Performance />} />
+            <Route path="/readiness" element={<Readiness />} />
+            <Route path="/study-plan" element={<StudyPlan />} />
+            <Route path="/profile" element={<Profile />} />
+          </Route>
 
-        {/* Catch-all */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Default redirect */}
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ToastProvider>
   );
 }
-
-export default App;

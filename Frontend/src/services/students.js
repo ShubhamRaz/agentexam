@@ -1,11 +1,11 @@
-import { apiClient } from './client';
+import client from './client';
 
-/** Student profile service */
+export async function getProfile() {
+  const response = await client.get('/students/me');
+  return response.data;
+}
 
-/**
- * Get the current student's profile.
- * GET /api/v1/students/me
- */
-export async function getStudentProfile() {
-  return apiClient.get('/students/me');
+export async function updateProfile(updates) {
+  const response = await client.put('/students/me', updates);
+  return response.data;
 }

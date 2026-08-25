@@ -1,148 +1,122 @@
-import React, { useState, useEffect } from 'react';
+// ============================================
+// AGENTEXAM — Readiness Page
+// ============================================
+import { useState, useEffect } from 'react';
+import { Target, AlertTriangle, CheckCircle2, Clock, ArrowRight, Sparkles, Calendar, TrendingUp } from 'lucide-react';
+import { Card, Badge, Button, ProgressCircle, ProgressBar, AIBadge, PageLoading } from '../components/ui';
 import { getReadiness } from '../services/performance';
-import LoadingState from '../components/common/LoadingState';
-import EmptyState from '../components/common/EmptyState';
+import { getScoreColor, getStatusColor } from '../utils/helpers';
 
-/**
- * Readiness page — connected to:
- *   GET /api/v1/performance/me/readiness
- */
-const Readiness = () => {
+export default function Readiness() {
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [readiness, setReadiness] = useState(null);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const data = await getReadiness();
-        setReadiness(data);
-      } catch (err) {
-        setError(err.message || 'Failed to load readiness data.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    getReadiness().then(d => { setData(d); setLoading(false); });
   }, []);
 
-  if (loading) return <LoadingState message="Calculating your readiness..." />;
+  if (loading) return <PageLoading />;
 
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="card p-8 text-center" style={{ color: '#ef4444' }}>
-          <i className="fas fa-exclamation-triangle text-3xl mb-4"></i>
-          <p>{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!readiness || readiness.status === 'INSUFFICIENT_DATA') {
-    return (
-      <div className="p-6">
-        <EmptyState
-          title="Insufficient Data"
-          message="You need to attempt more assessments to generate a readiness score. Complete at least 5 exam attempts."
-          icon="fa-chart-pie"
-        />
-      </div>
-    );
-  }
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'HIGH': return '#22c55e';
-      case 'MODERATE': return '#eab308';
-      case 'LOW': return '#ef4444';
-      default: return '#6b7280';
-    }
-  };
-
-  const statusColor = getStatusColor(readiness.status);
-  const score = readiness.readiness_score != null ? Math.round(readiness.readiness_score) : 0;
+  const { overallScore, examDate, daysLeft, estimatedStudyHoursNeeded, breakdown, subjectReadiness, riskAreas, recommendations } = data;
 
   return (
-    <div className="page-container p-6">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold" style={{ color: 'var(--text-main)' }}>Exam Readiness</h2>
-        <p className="text-muted">Based on your recent performance, here is your predicted readiness.</p>
-      </div>
+    <div className="animate-fade-in-up">
+      {/* Hero */}
+      <Card style={{ marginBottom: 'var(--space-8)' }}>
+        <Card.Body>
+          <div className="readiness-gauge-section">
+            <ProgressCircle value={overallScore} size={180} strokeWidth={12} label="Readiness" />
+            <div style={{ marginTop: 'var(--space-5)', display: 'flex', justifyContent: 'center', gap: 'var(--space-8)' }}>
+              <div><Calendar size={16} style={{ display: 'inline', marginRight: '4px', color: 'var(--color-text-tertiary)' }} /><span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>Exam: {examDate}</span></div>
+              <div><Clock size={16} style={{ display: 'inline', marginRight: '4px', color: 'var(--color-text-tertiary)' }} /><span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>{daysLeft} days left</span></div>
+              <div><TrendingUp size={16} style={{ display: 'inline', marginRight: '4px', color: 'var(--color-text-tertiary)' }} /><span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>{estimatedStudyHoursNeeded}h needed</span></div>
+            </div>
 
-      <div className="grid-3col" style={{ gap: '24px', marginBottom: '24px' }}>
-        {/* Score Ring */}
-        <div className="card p-6 flex flex-col items-center justify-center">
-          <div className="relative mb-4" style={{
-            width: '120px', height: '120px', borderRadius: '50%',
-            background: `conic-gradient(${statusColor} ${score}%, var(--bg-input) 0)`
-          }}>
-            <div className="absolute inset-0 flex items-center justify-center m-2" style={{ borderRadius: '50%', background: 'var(--bg-card)' }}>
-              <span className="text-3xl font-bold" style={{ color: statusColor }}>{score}%</span>
+            <div className="readiness-breakdown">
+              {Object.entries(breakdown).map(([key, value]) => (
+                <div key={key} className="readiness-breakdown-item">
+                  <div className="readiness-breakdown-value" style={{ color: getScoreColor(value) }}>{value}%</div>
+                  <div className="readiness-breakdown-label">{key.charAt(0).toUpperCase() + key.slice(1)}</div>
+                </div>
+              ))}
             </div>
           </div>
-          <h3 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>{readiness.status}</h3>
-          <p className="text-sm mt-2 text-center text-muted">Readiness Level</p>
-        </div>
+        </Card.Body>
+      </Card>
 
-        {/* Risk Areas */}
-        <div className="card p-6" style={{ gridColumn: 'span 2' }}>
-          <h3 className="font-bold text-lg mb-4" style={{ color: 'var(--text-main)' }}>Risk Areas</h3>
-          {readiness.risk_areas.length === 0 ? (
-            <p className="text-muted">No significant risk areas detected. Keep up the good work!</p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {readiness.risk_areas.map((risk, idx) => (
-                <li key={idx} className="flex gap-4 p-3 rounded" style={{
-                  background: 'var(--bg-main)',
-                  borderLeft: `4px solid ${risk.risk_level === 'HIGH' ? '#ef4444' : risk.risk_level === 'MEDIUM' ? '#f59e0b' : '#22c55e'}`
-                }}>
-                  <div className="flex flex-col">
-                    <span className="font-semibold" style={{ color: 'var(--text-main)' }}>{risk.topic_name}</span>
-                    <span className="text-sm text-muted">{risk.reason}</span>
+      <div className="grid-cols-2" style={{ marginBottom: 'var(--space-6)' }}>
+        {/* Subject Readiness */}
+        <Card>
+          <Card.Header><h3 className="card-title">Subject Readiness</h3></Card.Header>
+          <Card.Body>
+            {subjectReadiness.map((sr, i) => (
+              <div key={i} style={{ marginBottom: 'var(--space-5)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+                  <span style={{ fontWeight: 'var(--font-medium)' }}>{sr.subject}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <Badge variant={getStatusColor(sr.status)}>
+                      {sr.status === 'on_track' ? 'On Track' : sr.status === 'needs_attention' ? 'Needs Attention' : 'At Risk'}
+                    </Badge>
+                    <span style={{ fontWeight: 'var(--font-semibold)', color: getScoreColor(sr.score) }}>{sr.score}%</span>
                   </div>
-                  <span className="ml-auto text-xs font-bold" style={{
-                    color: risk.risk_level === 'HIGH' ? '#ef4444' : '#f59e0b',
-                    alignSelf: 'center',
-                  }}>{risk.risk_level}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-
-      {/* Recommendations */}
-      <div className="card p-6">
-        <h3 className="font-bold text-lg mb-4" style={{ color: 'var(--text-main)' }}>Recommendations</h3>
-        {readiness.recommendations.length === 0 ? (
-          <p className="text-muted">No specific recommendations at this time.</p>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {readiness.recommendations.map((rec, idx) => (
-              <div key={idx} className="flex items-start gap-4 p-4 rounded" style={{ border: '1px solid var(--border)' }}>
-                <div style={{ color: rec.priority === 'HIGH' ? '#ef4444' : rec.priority === 'MEDIUM' ? '#eab308' : '#3b82f6' }}>
-                  <i className="fas fa-lightbulb text-xl"></i>
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-bold" style={{
-                      background: rec.priority === 'HIGH' ? '#fee2e2' : rec.priority === 'MEDIUM' ? '#fef3c7' : '#dbeafe',
-                      color: rec.priority === 'HIGH' ? '#991b1b' : rec.priority === 'MEDIUM' ? '#854d0e' : '#1e40af',
-                      padding: '2px 8px', borderRadius: '4px',
-                    }}>{rec.priority}</span>
-                  </div>
-                  <p className="text-sm" style={{ color: 'var(--text-main)' }}>{rec.message}</p>
+                <ProgressBar value={sr.score} />
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
+                  {sr.topicsReady} of {sr.totalTopics} topics ready
                 </div>
               </div>
             ))}
-          </div>
-        )}
+          </Card.Body>
+        </Card>
+
+        {/* Risk Areas */}
+        <Card>
+          <Card.Header>
+            <h3 className="card-title"><AlertTriangle size={18} style={{ color: 'var(--color-danger)', marginRight: '8px' }} />Risk Areas</h3>
+          </Card.Header>
+          <Card.Body>
+            {riskAreas.map((ra, i) => (
+              <div key={i} style={{
+                padding: 'var(--space-4)', marginBottom: 'var(--space-3)',
+                background: ra.risk === 'high' ? 'var(--color-danger-light)' : 'var(--color-warning-light)',
+                borderRadius: 'var(--radius-md)',
+                borderLeft: `3px solid ${ra.risk === 'high' ? 'var(--color-danger)' : 'var(--color-warning)'}`,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-sm)' }}>{ra.topic}</span>
+                  <Badge variant={ra.risk === 'high' ? 'danger' : 'warning'}>{ra.risk}</Badge>
+                </div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-tertiary)' }}>{ra.subject}</div>
+                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', marginTop: '4px' }}>{ra.reason}</p>
+              </div>
+            ))}
+          </Card.Body>
+        </Card>
       </div>
+
+      {/* AI Recommendations */}
+      <Card className="ai-card">
+        <Card.Header>
+          <h3 className="card-title"><Sparkles size={18} style={{ color: 'var(--color-ai)', marginRight: '8px' }} />AI Recommendations</h3>
+          <AIBadge>AI Generated</AIBadge>
+        </Card.Header>
+        <Card.Body>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            {recommendations.map((rec, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-4)', background: 'var(--color-bg-alt)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: rec.priority === 'high' ? 'var(--color-danger-light)' : rec.priority === 'medium' ? 'var(--color-warning-light)' : 'var(--color-success-light)', color: rec.priority === 'high' ? 'var(--color-danger)' : rec.priority === 'medium' ? 'var(--color-warning)' : 'var(--color-success)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-xs)', fontWeight: 'var(--font-bold)', flexShrink: 0 }}>
+                  {i + 1}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)' }}>{rec.action}</div>
+                </div>
+                <Badge variant="neutral"><Clock size={12} /> {rec.estimatedTime}</Badge>
+                <Badge variant={rec.priority === 'high' ? 'danger' : rec.priority === 'medium' ? 'warning' : 'success'}>{rec.priority}</Badge>
+              </div>
+            ))}
+          </div>
+        </Card.Body>
+      </Card>
     </div>
   );
-};
-
-export default Readiness;
+}

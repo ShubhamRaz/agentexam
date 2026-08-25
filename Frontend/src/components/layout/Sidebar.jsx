@@ -1,97 +1,92 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+// ============================================
+// AGENTEXAM — Sidebar Navigation
+// ============================================
+import { NavLink, useLocation } from 'react-router-dom';
+import {
+  LayoutDashboard, BookOpen, FileText, ClipboardList,
+  PenTool, FlaskConical, Mic, BarChart3, Target,
+  CalendarCheck, User, GraduationCap, LogOut, Settings
+} from 'lucide-react';
+import { getInitials } from '../../utils/helpers';
 
-const Sidebar = ({ isOpen, toggleSidebar }) => {
-  const { user } = useAuth();
+const navItems = [
+  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+  { label: 'Materials', path: '/materials', icon: BookOpen },
+  { label: 'Syllabus', path: '/syllabus', icon: FileText },
+  { label: 'PYQ Analysis', path: '/pyq-analysis', icon: ClipboardList },
+  { section: 'Practice' },
+  { label: 'Theory Exam', path: '/exam', icon: PenTool },
+  { label: 'Practical', path: '/practical', icon: FlaskConical },
+  { label: 'AI Viva', path: '/viva', icon: Mic, badge: 'AI' },
+  { section: 'Analytics' },
+  { label: 'Performance', path: '/performance', icon: BarChart3 },
+  { label: 'Readiness', path: '/readiness', icon: Target },
+  { label: 'Study Plan', path: '/study-plan', icon: CalendarCheck },
+];
 
-  const displayName = user?.name || 'Student';
-  const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  const roleLabel = user?.role
-    ? `${user.role.charAt(0)}${user.role.slice(1).toLowerCase()} Account`
-    : 'Student Account';
+export default function Sidebar({ isOpen, onClose }) {
+  const location = useLocation();
 
   return (
     <>
-      <div className={`sidebar ${isOpen ? 'open' : ''}`}>
-        <div className="sidebar-brand">
-          <div className="logo-icon">A</div>
-          <h1>Agent<span>Exam</span></h1>
-        </div>
-
-        <div className="nav-section">Main</div>
-        <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} end>
-          <i className="fas fa-th-large"></i>
-          <span>Dashboard</span>
-        </NavLink>
-        <NavLink to="/study-plan" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-tasks"></i>
-          <span>Study Plan</span>
-        </NavLink>
-
-        <div className="nav-section">Preparation</div>
-        <NavLink to="/upload-material" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-upload"></i>
-          <span>Upload Material</span>
-        </NavLink>
-        <NavLink to="/materials" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-folder-open"></i>
-          <span>My Materials</span>
-        </NavLink>
-        <NavLink to="/syllabus" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-book"></i>
-          <span>Syllabus</span>
-        </NavLink>
-        <NavLink to="/pyqs" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-history"></i>
-          <span>PYQs</span>
-        </NavLink>
-
-
-        <div className="nav-section">Evaluation</div>
-        <NavLink to="/exams" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-file-alt"></i>
-          <span>Theory Exams</span>
-        </NavLink>
-        <NavLink to="/practical" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-flask"></i>
-          <span>Practical &amp; Lab</span>
-        </NavLink>
-        <NavLink to="/viva" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-microphone-alt"></i>
-          <span>AI Viva</span>
-        </NavLink>
-
-        <div className="nav-section">Analytics</div>
-        <NavLink to="/performance" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-chart-line"></i>
-          <span>Performance</span>
-        </NavLink>
-        <NavLink to="/results" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-clipboard-check"></i>
-          <span>Results</span>
-        </NavLink>
-        <NavLink to="/readiness" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-          <i className="fas fa-brain"></i>
-          <span>Readiness</span>
-        </NavLink>
-
-        <div className="sidebar-footer">
-          <NavLink to="/profile" className="user-card block" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <div className="user-avatar">{initials}</div>
-            <div className="user-info">
-              <div className="name">{displayName}</div>
-              <div className="role">{roleLabel}</div>
+      <div className={`sidebar-overlay ${isOpen ? 'show' : ''}`} onClick={onClose} />
+      <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+        {/* Logo */}
+        <div className="sidebar-header">
+          <NavLink to="/dashboard" className="sidebar-logo" onClick={onClose}>
+            <div className="sidebar-logo-icon">
+              <GraduationCap size={20} />
+            </div>
+            <div className="sidebar-logo-text">
+              Agent<span>Exam</span>
             </div>
           </NavLink>
         </div>
-      </div>
-      <div
-        className={`overlay ${isOpen ? 'open' : ''}`}
-        onClick={toggleSidebar}
-      ></div>
+
+        {/* Navigation */}
+        <nav className="sidebar-nav">
+          {navItems.map((item, i) => {
+            if (item.section) {
+              return (
+                <div key={i} className="sidebar-section-label">
+                  {item.section}
+                </div>
+              );
+            }
+
+            const Icon = item.icon;
+            const isActive = location.pathname === item.path ||
+              (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
+
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                className={`sidebar-link ${isActive ? 'active' : ''}`}
+                onClick={onClose}
+              >
+                <Icon size={20} className="sidebar-link-icon" />
+                <span>{item.label}</span>
+                {item.badge && <span className="sidebar-link-badge">{item.badge}</span>}
+              </NavLink>
+            );
+          })}
+        </nav>
+
+        {/* Footer / User */}
+        <div className="sidebar-footer">
+          <NavLink to="/profile" className="sidebar-user" onClick={onClose}>
+            <div className="avatar avatar-sm">
+              {getInitials('Prerna Sharma')}
+            </div>
+            <div className="sidebar-user-info">
+              <div className="sidebar-user-name">Prerna Sharma</div>
+              <div className="sidebar-user-email">B.Tech CS — Sem 4</div>
+            </div>
+            <Settings size={16} style={{ color: 'var(--color-text-tertiary)' }} />
+          </NavLink>
+        </div>
+      </aside>
     </>
   );
-};
-
-export default Sidebar;
+}

@@ -1,21 +1,21 @@
-import { apiClient } from './client';
+import client from './client';
 
-/** PYQs service */
-
-/**
- * List all PYQs, optionally filtered by subject.
- * GET /api/v1/pyqs/
- */
-export async function getPYQs({ subjectId, skip = 0, limit = 20 } = {}) {
-  const params = { skip, limit };
-  if (subjectId) params.subject_id = subjectId;
-  return apiClient.get('/pyqs/', params);
-}
-
-/**
- * Get a single PYQ by ID.
- * GET /api/v1/pyqs/{pyq_id}
- */
-export async function getPYQ(pyqId) {
-  return apiClient.get(`/pyqs/${pyqId}`);
+export async function getPYQs(filters = {}) {
+  const params = {};
+  if (filters.subjectId) params.subject_id = filters.subjectId;
+  
+  const response = await client.get('/pyqs', { params });
+  
+  // Map backend MaterialResponse to what the UI expects for PYQs
+  return response.data.map(p => ({
+    id: p.id,
+    subjectId: p.subject_id,
+    subject: p.subject?.name || 'Subject',
+    year: new Date(p.created_at).getFullYear(),
+    question: p.title || p.file_name,
+    topic: 'General', // Backend doesn't currently extract topics from PYQ files
+    type: 'Document',
+    marks: 10,
+    frequency: 1
+  }));
 }
