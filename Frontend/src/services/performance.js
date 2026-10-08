@@ -1,98 +1,203 @@
 import client from './client';
 
+/**
+ * GET /performance/me → PerformanceOverviewResponse
+ * Maps backend response to what Performance.jsx expects.
+ */
 export async function getPerformance() {
   const response = await client.get('/performance/me');
   const d = response.data;
-  
-  // Map backend response to what Performance.jsx expects
+
+  // Collect all topics (strong + weak + insufficient) for subject grouping
+  const allTopics = [
+    ...(d.strong_topics || []).map(t => ({ ...t, status: 'strong' })),
+    ...(d.weak_topics || []).map(t => ({ ...t, status: 'weak' })),
+    ...(d.insufficient_data_topics || []).map(t => ({ ...t, status: 'insufficient' })),
+  ];
+
+  const totalAttempts = allTopics.reduce((sum, t) => sum + (t.attempts || 0), 0);
+  const overallAccuracy = Math.round(d.overall_accuracy) || 0;
+
+  // Group by subject_id for subject performance breakdown
+  const subjectMap = {};
+  allTopics.forEach(t => {
+    const sid = t.subject_id;
+    if (!subjectMap[sid]) {
+      subjectMap[sid] = { subject_id: sid, topicScores: [], totalAttempts: 0 };
+    }
+    subjectMap[sid].topicScores.push(t.accuracy || 0);
+    subjectMap[sid].totalAttempts += t.attempts || 0;
+  });
+
+  const subjectPerformance = Object.values(subjectMap).map(s => {
+    const avgScore = s.topicScores.length > 0
+      ? Math.round(s.topicScores.reduce((a, b) => a + b, 0) / s.topicScores.length)
+      : 0;
+    return {
+      subject: s.subject_id, // Will be a UUID; frontend can resolve the name
+      score: avgScore,
+      accuracy: avgScore,
+    };
+  });
+
   return {
     overall: {
-      totalTests: 12, // Mocked fallback
-      averageScore: Math.round(d.overall_accuracy) || 75,
-      improvement: 5,
-      accuracy: Math.round(d.overall_accuracy) || 75,
-      studyHours: 42
+      totalTests: totalAttempts,
+      averageScore: overallAccuracy,
+      improvement: 0,
+      accuracy: overallAccuracy,
+      studyHours: 0
     },
-    scoreTrend: [
-      { date: 'Week 1', score: 55 }, { date: 'Week 2', score: 62 },
-      { date: 'Week 3', score: 65 }, { date: 'Week 4', score: 72 },
-      { date: 'Week 5', score: 68 }, { date: 'Week 6', score: Math.round(d.overall_accuracy) || 75 },
-    ],
-    accuracyTrend: [
-      { date: 'Week 1', accuracy: 50 }, { date: 'Week 2', accuracy: 58 },
-      { date: 'Week 3', accuracy: 63 }, { date: 'Week 4', accuracy: 68 },
-      { date: 'Week 5', accuracy: 65 }, { date: 'Week 6', accuracy: Math.round(d.overall_accuracy) || 75 },
-    ],
-    subjectPerformance: [
-      { subject: 'Computer Networks', score: 72, accuracy: 68 },
-      { subject: 'Database Systems', score: 85, accuracy: 82 },
-      { subject: 'Artificial Intelligence', score: Math.round(d.overall_accuracy) || 65, accuracy: Math.round(d.overall_accuracy) || 62 }
-    ],
-    topicPerformance: [...(d.strong_topics || []).map(t => ({
+    scoreTrend: [],
+    accuracyTrend: [],
+    subjectPerformance,
+    topicPerformance: allTopics.map(t => ({
       topic: t.topic_name,
-      subject: 'AI', // Mocked subject since backend schema doesn't include subject name
-      score: Math.round(t.accuracy * 100),
-      status: 'strong'
-    })), ...(d.weak_topics || []).map(t => ({
-      topic: t.topic_name,
-      subject: 'AI',
-      score: Math.round(t.accuracy * 100),
-      status: 'weak'
-    }))],
+      subject: t.subject_id,
+      score: Math.round(t.accuracy || 0),
+      status: t.status
+    })),
     weakTopics: (d.weak_topics || []).map(t => ({
       topic: t.topic_name,
-      subject: 'AI',
-      score: Math.round(t.accuracy * 100),
-      recommendation: 'Review core concepts and practice numericals.'
+      subject: t.subject_id,
+      score: Math.round(t.accuracy || 0),
+      recommendation: 'Review core concepts and practice more questions on this topic.'
     }))
   };
 }
 
+/**
+ * GET /performance/me/readiness → ReadinessResponse
+ * Maps backend response to what Readiness.jsx expects.
+ */
 export async function getReadiness() {
   const response = await client.get('/performance/me/readiness');
   const d = response.data;
-  
-  // Map backend response to what Readiness.jsx expects
+
   return {
-    overallScore: Math.round(d.readiness_score) || 0,
-    examDate: 'Sep 15, 2026', // Mocked fallback
-    daysLeft: 21,
-    estimatedStudyHoursNeeded: 45,
+    overallScore: d.readiness_score != null ? Math.round(d.readiness_score) : 0,
+    status: d.status || 'INSUFFICIENT_DATA',
+    estimatedStudyHoursNeeded: 0,
     breakdown: {
-      accuracy: d.factors?.find(f => f.name.toLowerCase().includes('accuracy'))?.value || 70,
-      coverage: d.factors?.find(f => f.name.toLowerCase().includes('coverage'))?.value || 60,
-      consistency: d.factors?.find(f => f.name.toLowerCase().includes('consistency'))?.value || 85,
-      confidence: d.factors?.find(f => f.name.toLowerCase().includes('confidence'))?.value || 65,
+      accuracy: d.factors?.find(f => f.name.toLowerCase().includes('accuracy'))?.value || 0,
+      topicsAttempted: d.factors?.find(f => f.name.toLowerCase().includes('topics'))?.value || 0,
     },
-    subjectReadiness: [
-      { subject: 'Computer Networks', status: 'on_track', score: 82, topicsReady: 12, totalTopics: 15 },
-      { subject: 'Database Systems', status: 'needs_attention', score: 65, topicsReady: 8, totalTopics: 14 }
-    ],
+    subjectReadiness: [],
     riskAreas: (d.risk_areas || []).map(r => ({
       topic: r.topic_name,
-      subject: 'AI', // Mocked subject
+      subject: r.topic_id,
       risk: r.risk_level.toLowerCase(),
       reason: r.reason
     })),
     recommendations: (d.recommendations || []).map(r => ({
       action: r.message,
-      estimatedTime: '2h',
+      estimatedTime: '',
       priority: r.priority.toLowerCase()
     }))
   };
 }
 
-import { mockDashboardData } from '../data/mockData';
-
-// Temporary compatibility for dashboard
+/**
+ * Dashboard data — aggregates performance, recent exams, and study plan.
+ * Falls back gracefully when individual endpoints have no data.
+ */
 export async function getDashboard() {
-  // Can aggregate endpoints here or call academic analytics
-  try {
-    const response = await client.get('/academic-analytics/dashboard');
-    return response.data;
-  } catch (error) {
-    // If backend doesn't have a single dashboard endpoint, we might have to aggregate
-    console.warn("Dashboard endpoint failed, falling back to mock data", error.message);
-    return mockDashboardData;
+  // Fetch data from multiple backend endpoints in parallel
+  const [perfResult, readinessResult, examsResult, planResult, userResult] = await Promise.allSettled([
+    client.get('/performance/me'),
+    client.get('/performance/me/readiness'),
+    client.get('/exams', { params: { limit: 5 } }),
+    client.get('/study-plan/me'),
+    client.get('/auth/me'),
+  ]);
+
+  const perf = perfResult.status === 'fulfilled' ? perfResult.value.data : null;
+  const readiness = readinessResult.status === 'fulfilled' ? readinessResult.value.data : null;
+  const exams = examsResult.status === 'fulfilled' ? examsResult.value.data : null;
+  const plan = planResult.status === 'fulfilled' ? planResult.value.data : null;
+  const user = userResult.status === 'fulfilled' ? userResult.value.data : null;
+
+  const overallAccuracy = perf ? Math.round(perf.overall_accuracy) : 0;
+  const readinessScore = readiness?.readiness_score != null ? Math.round(readiness.readiness_score) : 0;
+
+  // Build today tasks from study plan
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayTasks = [];
+  if (plan && plan.tasks) {
+    plan.tasks.forEach(task => {
+      if (task.date === todayStr || !task.date) {
+        todayTasks.push({
+          id: task.id || task.title,
+          title: task.title || task.topic || 'Study Session',
+          subject: task.subject || 'General',
+          priority: task.priority || 'medium',
+          duration: task.duration || '1h',
+          completed: task.completed || task.status === 'completed' || false,
+        });
+      }
+    });
   }
+
+  // Build recent tests from exam history
+  const recentTests = [];
+  if (exams && exams.items) {
+    exams.items.slice(0, 3).forEach(exam => {
+      recentTests.push({
+        type: (exam.test_type || 'mock').toLowerCase(),
+        name: `${exam.test_type || 'Mock'} Test`,
+        score: exam.obtained_marks || 0,
+        date: exam.started_at ? new Date(exam.started_at).toLocaleDateString() : '',
+      });
+    });
+  }
+
+  // Build weak topics
+  const weakTopics = (perf?.weak_topics || []).slice(0, 3).map(t => ({
+    score: Math.round(t.accuracy || 0),
+    topic: t.topic_name,
+    subject: t.subject_id,
+    recommendation: 'Review core concepts and practice more questions.'
+  }));
+
+  // Build subject performance from topic data
+  const allTopics = [
+    ...(perf?.strong_topics || []),
+    ...(perf?.weak_topics || []),
+    ...(perf?.insufficient_data_topics || []),
+  ];
+  const subjectMap = {};
+  allTopics.forEach(t => {
+    const sid = t.subject_id;
+    if (!subjectMap[sid]) {
+      subjectMap[sid] = { subject: sid, scores: [], totalAttempts: 0 };
+    }
+    subjectMap[sid].scores.push(t.accuracy || 0);
+    subjectMap[sid].totalAttempts += t.attempts || 0;
+  });
+  const subjectPerformance = Object.values(subjectMap).map(s => ({
+    subject: s.subject,
+    score: Math.round(s.scores.reduce((a, b) => a + b, 0) / s.scores.length),
+    tests: s.totalAttempts,
+    accuracy: Math.round(s.scores.reduce((a, b) => a + b, 0) / s.scores.length),
+  }));
+
+  const totalTests = allTopics.reduce((sum, t) => sum + (t.attempts || 0), 0);
+
+  return {
+    student: {
+      name: user?.name || 'Student',
+      streak: 0,
+      averageScore: overallAccuracy,
+      testsCompleted: totalTests,
+      totalStudyHours: 0
+    },
+    readinessScore,
+    daysLeft: 0,
+    examDate: '',
+    recentTests,
+    recentActivity: [],
+    todayTasks,
+    weakTopics,
+    subjectPerformance,
+  };
 }

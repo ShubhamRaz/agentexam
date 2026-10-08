@@ -31,11 +31,12 @@ export async function getStudyPlan() {
   
   return {
     totalDays: daysArray.length || 7,
+    endDate: d.end_date,
     days: daysArray.length > 0 ? daysArray : [{ date: new Date().toISOString(), label: 'Today', isToday: true, tasks: [] }]
   };
 }
 
 export async function completeTask(taskId) {
-  const response = await client.post(`/study-plan/tasks/${taskId}/complete`);
+  const response = await client.patch(`/study-plan/tasks/${taskId}/status`, { status: 'completed' });
   return response.data;
 }

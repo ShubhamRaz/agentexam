@@ -1,7 +1,9 @@
 // ============================================
 // AGENTEXAM — Sidebar Navigation
 // ============================================
+import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { getCurrentUser } from '../../services/auth';
 import {
   LayoutDashboard, BookOpen, FileText, ClipboardList,
   PenTool, FlaskConical, Mic, BarChart3, Target,
@@ -26,6 +28,11 @@ const navItems = [
 
 export default function Sidebar({ isOpen, onClose }) {
   const location = useLocation();
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    getCurrentUser().then(u => setUser(u)).catch(err => console.error(err));
+  }, []);
 
   return (
     <>
@@ -73,15 +80,14 @@ export default function Sidebar({ isOpen, onClose }) {
           })}
         </nav>
 
-        {/* Footer / User */}
         <div className="sidebar-footer">
           <NavLink to="/profile" className="sidebar-user" onClick={onClose}>
             <div className="avatar avatar-sm">
-              {getInitials('Prerna Sharma')}
+              {getInitials(user?.name || 'Student')}
             </div>
             <div className="sidebar-user-info">
-              <div className="sidebar-user-name">Prerna Sharma</div>
-              <div className="sidebar-user-email">B.Tech CS — Sem 4</div>
+              <div className="sidebar-user-name">{user?.name || 'Student'}</div>
+              <div className="sidebar-user-email" title={user?.email || ''}>{user?.email || 'student@example.com'}</div>
             </div>
             <Settings size={16} style={{ color: 'var(--color-text-tertiary)' }} />
           </NavLink>

@@ -41,3 +41,32 @@ async def read_student_semester(
         raise HTTPException(status_code=404, detail="Semester not assigned for student")
         
     return current_user.semester
+
+from pydantic import BaseModel
+class StudentUpdate(BaseModel):
+    name: str | None = None
+    department: str | None = None
+    semester: str | None = None
+
+@router.put("/me", response_model=StudentProfileResponse)
+async def update_student_profile(
+    updates: StudentUpdate,
+    db: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """ Update current student profile. """
+    if not isinstance(current_user, Student):
+        raise HTTPException(status_code=403, detail="Not a student")
+        
+    if updates.name is not None:
+        current_user.name = updates.name
+    if updates.department is not None:
+        current_user.department = updates.department
+    if updates.semester is not None:
+        current_user.semester = updates.semester
+        
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+

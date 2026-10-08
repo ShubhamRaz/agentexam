@@ -1,4 +1,4 @@
-﻿"""
+"""
 GET /api/v1/academic-analytics/topic-frequency
 GET /api/v1/academic-analytics/question-patterns
 
@@ -42,3 +42,5 @@ async def question_patterns(
     Only uses PYQ materials uploaded by the requesting user.
     """
     return await analytics_service.get_question_patterns(db, subject_id, current_user.id)
+
+

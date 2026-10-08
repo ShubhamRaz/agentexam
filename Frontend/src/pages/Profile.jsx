@@ -16,9 +16,9 @@ export default function Profile() {
   const [form, setForm] = useState({
     name: '',
     email: '',
-    university: 'Agent University',
-    program: 'B.Tech CSE',
-    semester: '6',
+    university: '',
+    program: '',
+    semester: '',
   });
 
   useEffect(() => {
@@ -28,8 +28,8 @@ export default function Profile() {
             ...f,
             name: data?.name || '',
             email: data?.email || '',
-            program: data?.department || 'B.Tech CSE',
-            semester: data?.semester || '6'
+            program: data?.department || '',
+            semester: data?.semester || ''
         }));
         setLoading(false);
     }).catch(err => {
@@ -40,7 +40,8 @@ export default function Profile() {
 
   const handleSave = () => {
       setSaving(true);
-      updateProfile(form).then(data => {
+      const updates = { name: form.name, department: form.program, semester: form.semester };
+      updateProfile(updates).then(data => {
           setStudent(data);
           setSaving(false);
       }).catch(err => {

@@ -3,7 +3,7 @@
 // ============================================
 import { useState, useEffect } from 'react';
 import { Upload, FileText, File, Search, Filter, FolderOpen, MoreVertical, Eye, Trash2, Download } from 'lucide-react';
-import { Card, Badge, Button, Tabs, SearchInput, EmptyState, PageLoading } from '../components/ui';
+import { Card, Badge, Button, Tabs, SearchInput, EmptyState, PageLoading, Select } from '../components/ui';
 import { getMaterials } from '../services/materials';
 import { getMaterialTypeIcon, getMaterialTypeColor, formatDate } from '../utils/helpers';
 
@@ -14,8 +14,18 @@ export default function Materials() {
   const [search, setSearch] = useState('');
   const [dragOver, setDragOver] = useState(false);
 
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [uploading, setUploading] = useState(false);
+
   useEffect(() => {
-    getMaterials().then(data => { setMaterials(data); setLoading(false); });
+    Promise.all([getMaterials(), import('../services/academic').then(m => m.getSubjects())])
+      .then(([matData, subData]) => {
+        setMaterials(matData);
+        setSubjects(subData);
+        if (subData.length > 0) setSelectedSubject(subData[0].id);
+        setLoading(false);
+      });
   }, []);
 
   const tabs = [
@@ -46,27 +56,58 @@ export default function Materials() {
   const handleUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    if (!selectedSubject) {
+        alert('Please select a subject first.');
+        return;
+    }
     
-    // Default to the first subject available if not filtered, or prompt user.
-    // For now, if activeTab is not a subject, we'll just fail gracefully or pick a generic subject ID if needed.
-    // Actually, backend requires subject_id. Let's just use a dummy one or alert the user.
-    alert("Upload functionality requires selecting a subject first. We will implement the subject picker modal shortly.");
+    setUploading(true);
+    const { uploadMaterial } = await import('../services/materials');
+    try {
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const type = activeTab === 'all' ? 'notes' : activeTab;
+            await uploadMaterial(file, type, selectedSubject);
+        }
+        // Refresh materials
+        const newMats = await getMaterials();
+        setMaterials(newMats);
+    } catch (error) {
+        console.error('Upload failed', error);
+        alert('Upload failed. Please try again.');
+    } finally {
+        setUploading(false);
+    }
   };
 
   return (
     <div className="animate-fade-in-up">
       {/* Upload Zone */}
+      <div style={{ marginBottom: 'var(--space-6)', display: 'flex', gap: 'var(--space-4)', alignItems: 'center' }}>
+        <div style={{ minWidth: '200px' }}>
+            <Select 
+                label="Target Subject" 
+                options={subjects.map(s => ({ value: s.id, label: s.name }))}
+                value={selectedSubject}
+                onChange={e => setSelectedSubject(e.target.value)}
+            />
+        </div>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)' }}>
+            Select a subject before dragging files. Files will be uploaded as the currently active tab category (e.g. PYQs).
+        </p>
+      </div>
+
       <div
-        className={`upload-zone ${dragOver ? 'drag-over' : ''}`}
+        className={`upload-zone ${dragOver ? 'drag-over' : ''} ${uploading ? 'opacity-50' : ''}`}
         style={{ marginBottom: 'var(--space-8)' }}
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); }}
-        onClick={() => document.getElementById('file-upload')?.click()}
+        onClick={() => !uploading && document.getElementById('file-upload')?.click()}
       >
-        <input type="file" id="file-upload" hidden multiple accept=".pdf,.doc,.docx,.jpg,.png" onChange={handleUpload} />
+        <input type="file" id="file-upload" hidden multiple accept=".pdf,.doc,.docx,.jpg,.png" onChange={handleUpload} disabled={uploading} />
         <div className="upload-zone-icon"><Upload size={24} /></div>
-        <h3 className="upload-zone-title">Upload Study Materials</h3>
+        <h3 className="upload-zone-title">{uploading ? 'Uploading...' : 'Upload Study Materials'}</h3>
         <p className="upload-zone-subtitle">Drag & drop files or click to browse · PDF, DOC, Images · Max 10MB each</p>
       </div>
 

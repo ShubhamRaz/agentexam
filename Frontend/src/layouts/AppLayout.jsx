@@ -2,7 +2,7 @@
 // AGENTEXAM — App Layout
 // ============================================
 import { useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, Navigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import Header from '../components/layout/Header';
 
@@ -31,6 +31,11 @@ export default function AppLayout() {
   // Full-screen pages (like exam test mode) skip layout
   if (location.pathname === '/exam/test') {
     return <Outlet />;
+  }
+
+  const token = localStorage.getItem('agentexam_token');
+  if (!token) {
+    return <Navigate to="/login" replace />;
   }
 
   return (

@@ -13,11 +13,18 @@ export default function StudyPlan() {
 
   useEffect(() => {
     getStudyPlan().then(d => {
-      setPlan(d);
+      if (d) {
+        setPlan(d);
+        const done = new Set();
+        if (d.days) {
+          d.days.forEach(day => day.tasks.forEach(t => { if (t.completed) done.add(t.id); }));
+        }
+        setCompleted(done);
+      }
       setLoading(false);
-      const done = new Set();
-      d.days.forEach(day => day.tasks.forEach(t => { if (t.completed) done.add(t.id); }));
-      setCompleted(done);
+    }).catch(err => {
+      console.error("Failed to fetch study plan", err);
+      setLoading(false);
     });
   }, []);
 
@@ -30,6 +37,7 @@ export default function StudyPlan() {
   };
 
   if (loading) return <PageLoading />;
+  if (!plan) return <div style={{ padding: 'var(--space-6)', textAlign: 'center' }}>No study plan available. Please try again later.</div>;
 
   const typeIcon = (type) => {
     switch (type) {
@@ -55,7 +63,7 @@ export default function StudyPlan() {
                 Your Personalized Study Plan
               </h3>
               <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>
-                AI-optimized for your exam on Sep 15, 2026 · {plan.totalDays} days · {totalTasks} tasks
+                AI-optimized for your exam{plan.endDate ? ` on ${new Date(plan.endDate).toLocaleDateString()}` : ''} · {plan.totalDays} days · {totalTasks} tasks
               </p>
             </div>
             <AIBadge>AI Generated</AIBadge>

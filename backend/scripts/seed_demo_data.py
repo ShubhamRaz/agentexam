@@ -53,9 +53,13 @@ async def clean_demo_data(session: AsyncSession):
         
         mock_test_ids = (await session.execute(select(MockTest.id).where(MockTest.student_id.in_(demo_user_ids)))).scalars().all()
         if mock_test_ids:
-            # Need to format tuple for asyncpg correctly or just execute many
+            # Delete mock test questions
             for mt_id in mock_test_ids:
                 await session.execute(text(f"DELETE FROM mock_test_question WHERE test_id = '{mt_id}'"))
+            # Delete mock test experiments
+            for mt_id in mock_test_ids:
+                await session.execute(text(f"DELETE FROM mock_test_experiment WHERE test_id = '{mt_id}'"))
+                
         await session.execute(delete(MockTest).where(MockTest.student_id.in_(demo_user_ids)))
         
         await session.execute(delete(Recommendation).where(Recommendation.plan_id.in_(

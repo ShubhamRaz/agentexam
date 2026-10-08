@@ -99,7 +99,7 @@ class StudyPlanService:
                 "topic_id": None,
                 "topic_name": "Take a Mock Test to identify weak areas",
                 "priority": RecommendationPriority.HIGH,
-                "type": RecommendationType.MOCK_TEST,
+                "type": RecommendationType.PRACTICE,
                 "duration": 30
             })
             

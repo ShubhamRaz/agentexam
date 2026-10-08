@@ -22,18 +22,6 @@ export async function getPracticals(subjectId = null) {
       });
     }
     
-    // Provide a default demo experiment if none are active so the UI isn't empty
-    if (experiments.length === 0) {
-      experiments.push({
-        id: 'demo-session',
-        subject_id: 'demo',
-        title: 'Implement Binary Search',
-        description: 'Write a Python program to implement binary search on a sorted array.',
-        marks: 10,
-        status: 'not_started'
-      });
-    }
-    
     return experiments;
   } catch (err) {
     console.error("Error fetching practicals", err);
@@ -42,13 +30,6 @@ export async function getPracticals(subjectId = null) {
 }
 
 export async function submitPractical(practicalId, submissionCode) {
-  if (practicalId === 'demo-session') {
-    return new Promise(resolve => setTimeout(() => resolve({
-      score: 95,
-      feedback: "AI Evaluation: Excellent implementation! Your code is efficient and correctly handles edge cases."
-    }), 1200));
-  }
-
   try {
     // The backend endpoint /submit finalizes a practical session.
     await client.post(`/practical/${practicalId}/submit`);

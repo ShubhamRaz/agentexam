@@ -46,11 +46,10 @@ export default function Dashboard() {
 
   const { student, readinessScore, daysLeft, examDate, recentTests, recentActivity, todayTasks, weakTopics, subjectPerformance } = data;
 
-  const performanceData = [
-    { name: 'Week 1', score: 55 }, { name: 'Week 2', score: 62 },
-    { name: 'Week 3', score: 65 }, { name: 'Week 4', score: 72 },
-    { name: 'Week 5', score: 68 }, { name: 'Week 6', score: 75 },
-  ];
+  // Build chart data from real subject performance
+  const performanceData = subjectPerformance && subjectPerformance.length > 0
+    ? subjectPerformance.map(s => ({ name: typeof s.subject === 'string' && s.subject.length > 12 ? s.subject.slice(0, 12) + '…' : (s.subject || 'Subject'), score: s.score || 0 }))
+    : [];
 
   return (
     <div className="animate-fade-in-up">
