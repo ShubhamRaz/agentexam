@@ -151,7 +151,7 @@ class DataIngestionService:
                 difficulty_level=DifficultyLevel.MEDIUM,
                 source=QuestionSource.PYQ,
                 source_reference=str(material.id),  # Link back to source material
-                status=QuestionStatus.REVIEW_REQUIRED,  # Needs human/AI review
+                status=QuestionStatus.ACTIVE,  # Available immediately to students
                 created_by=material.uploaded_by,
             )
             self.db.add(question)

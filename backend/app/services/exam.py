@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
-from app.models.exam import MockTest, Question, Answer, ExamStatus, QuestionStatus
+from app.models.exam import MockTest, Question, Answer, ExamStatus, QuestionStatus, DifficultyLevel
 from app.schemas.exam import MockTestCreate, AnswerCreate
 
 class ExamEngineService:
@@ -18,10 +18,12 @@ class ExamEngineService:
         # 1. Fetch available active questions
         stmt = select(Question).where(
             Question.subject_id == obj_in.subject_id,
-            Question.status == QuestionStatus.ACTIVE,
-            Question.difficulty_level == obj_in.difficulty_level
+            Question.status == QuestionStatus.ACTIVE
         )
         
+        if obj_in.difficulty_level != DifficultyLevel.MIXED:
+            stmt = stmt.where(Question.difficulty_level == obj_in.difficulty_level)
+            
         result = await db.execute(stmt)
         available_questions = result.scalars().all()
         

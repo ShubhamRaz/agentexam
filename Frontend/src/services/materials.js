@@ -11,7 +11,6 @@ export async function getMaterials(subjectId = null) {
     type: mat.material_type?.toLowerCase() || 'notes',
     status: mat.processing_status?.toLowerCase() || 'completed',
     subject: mat.subject?.name || 'Subject',
-    pages: mat.pages || 0,
     size: (mat.file_size / 1024).toFixed(1) + ' KB',
     uploadDate: mat.created_at
   }));
@@ -22,7 +21,8 @@ export async function uploadMaterial(file, type, subjectId) {
   formData.append('file', file);
   // Backend auth or material upload endpoints usually expect specific fields
   // Let's pass query params or form data depending on backend implementation
-  formData.append('type', type);
+  formData.append('title', file.name);
+  formData.append('material_type', type.toUpperCase());
   if (subjectId) {
     formData.append('subject_id', subjectId);
   }

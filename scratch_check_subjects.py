@@ -1,3 +1,5 @@
+import sys
+sys.path.insert(0, 'backend')
 import asyncio
 from app.db.session import AsyncSessionLocal
 from sqlalchemy import text

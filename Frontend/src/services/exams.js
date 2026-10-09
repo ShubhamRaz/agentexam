@@ -4,9 +4,9 @@ export async function createExam(config) {
   // Map frontend config to backend MockTestCreate
   const payload = {
     subject_id: config.subjectId,
-    test_type: "PRACTICE", // or similar, depending on backend ENUM
+    test_type: "THEORY",
     difficulty_level: config.difficulty.toUpperCase(),
-    total_marks: 100, // Or whatever the logic is
+    question_count: Number(config.questionCount) || 10,
     duration_minutes: Number(config.duration) || 30
   };
   const response = await client.post('/exams', payload);

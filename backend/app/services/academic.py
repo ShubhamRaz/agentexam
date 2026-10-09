@@ -77,7 +77,14 @@ async def get_subject(db: AsyncSession, subject_id: uuid.UUID) -> Optional[Subje
     return result.scalars().first()
 
 async def create_subject(db: AsyncSession, subject_in: SubjectCreate) -> Subject:
-    subject = Subject(**subject_in.model_dump())
+    data = subject_in.model_dump()
+    if not data.get("semester_id"):
+        result = await db.execute(select(Semester))
+        sem = result.scalars().first()
+        if sem:
+            data["semester_id"] = sem.id
+    
+    subject = Subject(**data)
     db.add(subject)
     await db.commit()
     await db.refresh(subject)

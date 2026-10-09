@@ -25,6 +25,7 @@ class DifficultyLevel(str, enum.Enum):
     EASY = "EASY"
     MEDIUM = "MEDIUM"
     HARD = "HARD"
+    MIXED = "MIXED"
 
 class QuestionType(str, enum.Enum):
     MCQ = "MCQ"

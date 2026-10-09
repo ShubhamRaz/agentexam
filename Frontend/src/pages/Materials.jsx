@@ -22,8 +22,8 @@ export default function Materials() {
     Promise.all([getMaterials(), import('../services/academic').then(m => m.getSubjects())])
       .then(([matData, subData]) => {
         setMaterials(matData);
-        setSubjects(subData);
-        if (subData.length > 0) setSelectedSubject(subData[0].id);
+        setSubjects(subData || []);
+        if (subData && subData.length > 0) setSelectedSubject(subData[0].id);
         setLoading(false);
       });
   }, []);
@@ -42,12 +42,13 @@ export default function Materials() {
 
   const statusBadge = (status) => {
     const map = {
-      completed: { variant: 'success', label: '✓ Analyzed' },
+      processed: { variant: 'success', label: '✓ Analyzed' },
       processing: { variant: 'warning', label: '⟳ Processing' },
       analyzing: { variant: 'info', label: '◎ Analyzing' },
       uploading: { variant: 'neutral', label: '↑ Uploading' },
+      failed: { variant: 'danger', label: '✕ Failed' },
     };
-    const s = map[status] || map.completed;
+    const s = map[status] || { variant: 'neutral', label: status };
     return <Badge variant={s.variant}>{s.label}</Badge>;
   };
 
@@ -80,6 +81,20 @@ export default function Materials() {
     }
   };
 
+  const handleCreateSubject = async () => {
+    const name = prompt("Enter new subject name:");
+    if (!name || !name.trim()) return;
+    try {
+        const { createSubject } = await import('../services/academic');
+        const newSub = await createSubject(name.trim());
+        setSubjects(prev => [...prev, newSub]);
+        setSelectedSubject(newSub.id);
+    } catch (e) {
+        console.error(e);
+        alert("Failed to create subject");
+    }
+  };
+
   return (
     <div className="animate-fade-in-up">
       {/* Upload Zone */}
@@ -92,8 +107,11 @@ export default function Materials() {
                 onChange={e => setSelectedSubject(e.target.value)}
             />
         </div>
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)' }}>
-            Select a subject before dragging files. Files will be uploaded as the currently active tab category (e.g. PYQs).
+        <Button variant="outline" size="sm" onClick={handleCreateSubject} style={{ marginTop: 'var(--space-4)' }}>
+           + Add New Subject
+        </Button>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', marginTop: 'var(--space-4)' }}>
+            Select or add a subject before dragging files.
         </p>
       </div>
 
@@ -134,7 +152,7 @@ export default function Materials() {
                   <div className="material-card-info">
                     <div className="material-card-name">{mat.name}</div>
                     <div className="material-card-meta">
-                      {mat.subject} · {mat.pages} pages · {mat.size}
+                      {mat.subject} · {mat.size}
                     </div>
                     <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                       {statusBadge(mat.status)}

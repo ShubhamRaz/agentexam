@@ -54,7 +54,8 @@ class QuestionService:
         status: Optional[QuestionStatus] = None,
         search: Optional[str] = None
     ) -> Tuple[List[Question], int]:
-        stmt = select(Question)
+        from sqlalchemy.orm import selectinload
+        stmt = select(Question).options(selectinload(Question.subject), selectinload(Question.topic))
         
         # Apply filters
         if subject_id:

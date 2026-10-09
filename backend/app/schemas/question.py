@@ -45,8 +45,16 @@ class QuestionUpdate(BaseModel):
     correct_answer: Optional[str] = None
     explanation: Optional[str] = None
 
+class BasicRef(BaseModel):
+    id: uuid.UUID
+    name: str
+    class Config:
+        from_attributes = True
+
 class QuestionResponseAdmin(QuestionBase):
     id: uuid.UUID
+    subject: Optional[BasicRef] = None
+    topic: Optional[BasicRef] = None
     options: Optional[List[OptionAdmin]] = None
     correct_answer: Optional[str] = None
     explanation: Optional[str] = None
@@ -63,6 +71,8 @@ class QuestionResponseStudent(QuestionBase):
     explanations, and internal evaluation flags.
     """
     id: uuid.UUID
+    subject: Optional[BasicRef] = None
+    topic: Optional[BasicRef] = None
     options: Optional[List[OptionStudent]] = None
     
     # Intentionally hiding correct_answer, explanation, created_by

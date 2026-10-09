@@ -34,7 +34,7 @@ class SemesterCreate(SemesterBase):
     course_id: uuid.UUID
 
 class SubjectCreate(SubjectBase):
-    semester_id: uuid.UUID
+    semester_id: Optional[uuid.UUID] = None
 
 class UnitCreate(UnitBase):
     subject_id: uuid.UUID

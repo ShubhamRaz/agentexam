@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
-from app.api.deps import SessionDep, get_current_user, require_role
+from app.api.deps import SessionDep, get_current_user, get_current_active_user, require_role
 from app.models.user import RoleType
 from app.schemas.academic import SubjectResponse, SubjectCreate, UnitResponse, MaterialResponse
 from app.services import academic as academic_service
@@ -68,9 +68,9 @@ async def read_subject_pyqs(
 async def create_subject(
     subject_in: SubjectCreate,
     db: SessionDep,
-    current_user: Any = Depends(require_role([RoleType.ADMIN])),
+    current_user: Any = Depends(get_current_active_user),
 ) -> Any:
-    """ Create new subject (Admin only). """
+    """ Create new subject. """
     return await academic_service.create_subject(db, subject_in=subject_in)
 
 @router.delete("/{subject_id}", status_code=status.HTTP_204_NO_CONTENT)
