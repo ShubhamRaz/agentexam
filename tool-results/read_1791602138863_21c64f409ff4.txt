@@ -1,0 +1,740 @@
+     1→import { db } from '../src/lib/db'
+     2→import { hashPassword } from '../src/lib/auth'
+     3→
+     4→/* ============================================================
+     5→   AgentExam seed script — run with: bun prisma/seed.ts
+     6→   ============================================================ */
+     7→
+     8→type Opt = { id: string; text: string; is_correct: boolean }
+     9→type SeedQ = {
+    10→  type: 'MCQ' | 'SHORT_ANSWER' | 'LONG_ANSWER' | 'VIVA'
+    11→  text: string
+    12→  topic: string
+    13→  options?: Opt[]
+    14→  correct?: string
+    15→  explanation?: string
+    16→  marks?: number
+    17→  difficulty?: 'EASY' | 'MEDIUM' | 'HARD'
+    18→  source?: 'PYQ' | 'MANUAL'
+    19→  year?: number
+    20→  sourceRef?: string
+    21→}
+    22→
+    23→type SeedTopic = { name: string; importance: 'high' | 'medium' | 'low'; freq: number; weight: number }
+    24→type SeedUnit = { name: string; topics: SeedTopic[] }
+    25→
+    26→type SeedSubject = {
+    27→  name: string
+    28→  code: string
+    29→  description: string
+    30→  units: SeedUnit[]
+    31→  questions: SeedQ[]
+    32→  experiments: { title: string; description: string; objective: string; instructions: string; expected: string; marks: number }[]
+    33→  materials: { type: string; title: string; file: string; size: number }[]
+    34→}
+    35→
+    36→const mcq = (text: string, topic: string, opts: string[], correctIdx: number, explanation: string, difficulty: 'EASY' | 'MEDIUM' | 'HARD' = 'MEDIUM'): SeedQ => ({
+    37→  type: 'MCQ', text, topic,
+    38→  options: opts.map((t, i) => ({ id: String.fromCharCode(65 + i), text: t, is_correct: i === correctIdx })),
+    39→  correct: String.fromCharCode(65 + correctIdx),
+    40→  explanation, marks: 1, difficulty, source: 'MANUAL',
+    41→})
+    42→
+    43→const short = (text: string, topic: string, marks = 5, difficulty: 'EASY' | 'MEDIUM' | 'HARD' = 'MEDIUM'): SeedQ => ({
+    44→  type: 'SHORT_ANSWER', text, topic, marks, difficulty, source: 'MANUAL',
+    45→})
+    46→
+    47→const long = (text: string, topic: string, marks = 10, difficulty: 'EASY' | 'MEDIUM' | 'HARD' = 'HARD'): SeedQ => ({
+    48→  type: 'LONG_ANSWER', text, topic, marks, difficulty, source: 'MANUAL',
+    49→})
+    50→
+    51→const viva = (text: string, topic: string, marks = 2): SeedQ => ({
+    52→  type: 'VIVA', text, topic, marks, difficulty: 'MEDIUM', source: 'MANUAL',
+    53→})
+    54→
+    55→const pyq = (text: string, topic: string, year: number, marks: number, type: 'MCQ' | 'SHORT_ANSWER' | 'LONG_ANSWER', difficulty: 'EASY' | 'MEDIUM' | 'HARD' = 'MEDIUM', opts?: string[], correctIdx?: number): SeedQ => ({
+    56→  type, text, topic, marks, difficulty, source: 'PYQ', year,
+    57→  sourceRef: `${year} End Term Exam`,
+    58→  ...(type === 'MCQ' && opts ? {
+    59→    options: opts.map((t, i) => ({ id: String.fromCharCode(65 + i), text: t, is_correct: i === correctIdx! })),
+    60→    correct: String.fromCharCode(65 + correctIdx!),
+    61→    explanation: 'Previous year objective question.',
+    62→  } : {}),
+    63→})
+    64→
+    65→/* ================= SUBJECTS ================= */
+    66→
+    67→const SUBJECTS: SeedSubject[] = [
+    68→  {
+    69→    name: 'Artificial Intelligence',
+    70→    code: 'CS501',
+    71→    description: 'Introduction to intelligent agents, search strategies, knowledge representation and machine learning fundamentals.',
+    72→    units: [
+    73→      { name: 'Unit 1: Introduction to AI', topics: [
+    74→        { name: 'Intelligent Agents', importance: 'high', freq: 6, weight: 18 },
+    75→        { name: 'Problem Solving Agents', importance: 'medium', freq: 3, weight: 10 },
+    76→        { name: 'Turing Test & AI History', importance: 'low', freq: 1, weight: 5 },
+    77→        { name: 'Environment Types', importance: 'medium', freq: 2, weight: 8 },
+    78→      ]},
+    79→      { name: 'Unit 2: Search Strategies', topics: [
+    80→        { name: 'BFS & DFS', importance: 'high', freq: 7, weight: 19 },
+    81→        { name: 'A* Search & Heuristics', importance: 'high', freq: 5, weight: 16 },
+    82→        { name: 'Hill Climbing', importance: 'medium', freq: 3, weight: 9 },
+    83→        { name: 'Adversarial Search (Minimax)', importance: 'medium', freq: 2, weight: 7 },
+    84→      ]},
+    85→      { name: 'Unit 3: Knowledge Representation', topics: [
+    86→        { name: 'Propositional Logic', importance: 'high', freq: 4, weight: 12 },
+    87→        { name: 'First Order Logic', importance: 'medium', freq: 3, weight: 11 },
+    88→        { name: 'Inference Rules', importance: 'medium', freq: 2, weight: 8 },
+    89→        { name: 'Semantic Networks', importance: 'low', freq: 1, weight: 4 },
+    90→      ]},
+    91→      { name: 'Unit 4: Machine Learning Basics', topics: [
+    92→        { name: 'Supervised vs Unsupervised Learning', importance: 'high', freq: 4, weight: 13 },
+    93→        { name: 'Neural Networks', importance: 'medium', freq: 3, weight: 10 },
+    94→        { name: 'Decision Trees', importance: 'medium', freq: 2, weight: 7 },
+    95→      ]},
+    96→    ],
+    97→    questions: [
+    98→      mcq('Which search algorithm uses a FIFO queue for its frontier?', 'BFS & DFS', ['Depth-First Search', 'Breadth-First Search', 'A* Search', 'Hill Climbing'], 1, 'BFS explores the shallowest unexpanded node first, which requires a First-In-First-Out queue.', 'EASY'),
+    99→      mcq('The evaluation function of A* search is expressed as:', 'A* Search & Heuristics', ['f(n) = h(n)', 'f(n) = g(n)', 'f(n) = g(n) + h(n)', 'f(n) = g(n) × h(n)'], 2, 'A* combines the actual cost so far g(n) with the estimated cost to goal h(n).'),
+   100→      mcq('The Turing Test is designed to evaluate a machine\'s ability to:', 'Turing Test & AI History', ['Compute faster than humans', 'Exhibit intelligent behaviour indistinguishable from a human', 'Store vast amounts of knowledge', 'Understand natural language grammar'], 1, 'In the Turing Test an interrogator must distinguish machine from human through conversation alone.', 'EASY'),
+   101→      mcq('Which knowledge representation scheme represents facts as a labelled graph of nodes and edges?', 'Semantic Networks', ['Propositional logic', 'Semantic networks', 'Decision tables', 'Frames only'], 1, 'Semantic networks encode entities as nodes and relations as edges.'),
+   102→      mcq('Unsupervised learning algorithms are trained on data that is:', 'Supervised vs Unsupervised Learning', ['Labeled with correct outputs', 'Unlabeled', 'Only numeric', 'Reinforced with rewards'], 1, 'Unsupervised learning discovers structure in unlabeled data, e.g. clustering.', 'EASY'),
+   103→      mcq('The Minimax algorithm is primarily used for:', 'Adversarial Search (Minimax)', ['Optimising supply chains', 'Two-player adversarial games', 'Clustering datasets', 'Natural language parsing'], 1, 'Minimax assumes an adversary playing optimally and backs values up the game tree.'),
+   104→      mcq('Hill Climbing search can get stuck at:', 'Hill Climbing', ['The global optimum only', 'Local maxima and ridges', 'Unreachable states only', 'None of the above'], 1, 'Hill climbing never moves to a worse state, so it can be trapped at local maxima, plateaux and ridges.'),
+   105→      mcq('The propositional statement "P → Q" is logically false only when:', 'Propositional Logic', ['P is false and Q is true', 'P is true and Q is false', 'Both P and Q are false', 'Both P and Q are true'], 1),
+   106→      mcq('Which agent architecture directly maps current percepts to actions without internal state?', 'Intelligent Agents', ['Model-based reflex agent', 'Simple reflex agent', 'Goal-based agent', 'Utility-based agent'], 1, 'A simple reflex agent uses condition-action rules on the current percept only.', 'EASY'),
+   107→      mcq('In decision tree induction, entropy is used to measure:', 'Decision Trees', ['The depth of the tree', 'The impurity/uncertainty of a set of examples', 'The number of leaves', 'The pruning factor'], 1, 'ID3/C4.5 choose the attribute with highest information gain, i.e. largest entropy reduction.', 'HARD'),
+   108→      mcq('A heuristic h(n) is admissible when:', 'A* Search & Heuristics', ['It overestimates the true cost', 'It never overestimates the true cost to reach the goal', 'It is always zero', 'It equals g(n)'], 1, 'Admissibility (optimistic estimates) guarantees A* finds an optimal solution.'),
+   109→      short('Differentiate between BFS and DFS. State one advantage of each.', 'BFS & DFS', 5, 'MEDIUM'),
+   110→      short('Explain the Minimax algorithm with a small game tree example.', 'Adversarial Search (Minimax)', 5, 'HARD'),
+   111→      short('What is an admissible heuristic? Why does it matter for A*?', 'A* Search & Heuristics', 3, 'MEDIUM'),
+   112→      short('Compare supervised and unsupervised learning with one example each.', 'Supervised vs Unsupervised Learning', 5, 'EASY'),
+   113→      long('Explain the A* search algorithm in detail. Define f(n), g(n) and h(n), and prove/discuss why A* is optimal when the heuristic is admissible.', 'A* Search & Heuristics', 10, 'HARD'),
+   114→      long('Describe the architecture of an intelligent agent. Explain simple reflex, model-based, goal-based and utility-based agents with examples.', 'Intelligent Agents', 10, 'MEDIUM'),
+   115→      viva('What is the difference between strong AI and weak AI?', 'Turing Test & AI History'),
+   116→      viva('Why is A* preferred over greedy best-first search?', 'A* Search & Heuristics'),
+   117→      viva('What does an admissible heuristic guarantee in tree search?', 'A* Search & Heuristics'),
+   118→      viva('Give one real-world application of reinforcement learning.', 'Supervised vs Unsupervised Learning'),
+   119→      viva('What is the frame problem in knowledge representation?', 'Inference Rules'),
+   120→      pyq('Explain the A* search algorithm with a suitable example. Discuss optimality.', 'A* Search & Heuristics', 2025, 10, 'LONG_ANSWER'),
+   121→      pyq('Differentiate between BFS and DFS traversal strategies.', 'BFS & DFS', 2025, 5, 'SHORT_ANSWER'),
+   122→      pyq('What is an intelligent agent? Draw and explain its block diagram.', 'Intelligent Agents', 2024, 5, 'SHORT_ANSWER'),
+   123→      pyq('Which search strategy uses a FIFO queue?', 'BFS & DFS', 2024, 1, 'MCQ', 'EASY', ['DFS', 'BFS', 'A*', 'IDS'], 1),
+   124→      pyq('Explain knowledge representation techniques in AI.', 'Propositional Logic', 2023, 10, 'LONG_ANSWER'),
+   125→      pyq('Compare supervised and unsupervised learning.', 'Supervised vs Unsupervised Learning', 2023, 5, 'SHORT_ANSWER'),
+   126→      pyq('Write short notes on heuristic search.', 'A* Search & Heuristics', 2022, 10, 'LONG_ANSWER'),
+   127→      pyq('Explain hill climbing and its limitations.', 'Hill Climbing', 2022, 5, 'SHORT_ANSWER'),
+   128→    ],
+   129→    experiments: [
+   130→      { title: 'Implement BFS for Graph Search', description: 'Write a program to perform Breadth-First Search on a given graph, printing the visit order and detecting reachability between two nodes.', objective: 'Understand frontier management with a FIFO queue and level-order exploration.', instructions: '1. Represent the graph as an adjacency list.\n2. Initialise a queue with the source node.\n3. Dequeue a node, mark visited, enqueue unvisited neighbours.\n4. Repeat until the queue is empty.', expected: 'Correct level-order traversal, e.g. for the sample graph: A B C D E F', marks: 10 },
+   131→      { title: 'Solve the 8-Puzzle with A*', description: 'Implement the A* algorithm with the Manhattan-distance heuristic to solve an 8-puzzle instance and print the optimal move sequence.', objective: 'Apply informed search with an admissible heuristic.', instructions: '1. Model states as 3x3 tuples.\n2. Generate successors by sliding the blank.\n3. Use a priority queue keyed by f(n)=g(n)+h(n).\n4. Track parent pointers to reconstruct the path.', expected: 'Optimal path of 12 moves or fewer for the sample instance, with nodes expanded reported.', marks: 10 },
+   132→      { title: 'Minimax for Tic-Tac-Toe', description: 'Implement the Minimax algorithm (with optional alpha-beta pruning) so the computer plays an unbeatable game of tic-tac-toe.', objective: 'Model adversarial search with a two-player game tree.', instructions: '1. Define the game state and terminal test.\n2. Recursively maximise/minimise utility.\n3. Add alpha-beta pruning for efficiency.', expected: 'An AI player that never loses; game tree explored with pruning statistics.', marks: 10 },
+   133→    ],
+   134→    materials: [
+   135→      { type: 'SYLLABUS', title: 'AI Syllabus 2025', file: 'ai_syllabus.pdf', size: 245760 },
+   136→      { type: 'PYQ', title: 'AI PYQs 2022-2025', file: 'ai_pyq_collection.pdf', size: 1830912 },
+   137→      { type: 'NOTES', title: 'AI Unit 1-4 Notes', file: 'ai_notes_full.pdf', size: 4210688 },
+   138→    ],
+   139→  },
+   140→  {
+   141→    name: 'Database Management Systems',
+   142→    code: 'CS502',
+   143→    description: 'Relational modelling, SQL, normalization and transaction management for dependable data storage.',
+   144→    units: [
+   145→      { name: 'Unit 1: ER & Relational Model', topics: [
+   146→        { name: 'ER Diagrams', importance: 'high', freq: 5, weight: 14 },
+   147→        { name: 'Relational Algebra', importance: 'medium', freq: 3, weight: 10 },
+   148→        { name: 'Keys & Constraints', importance: 'high', freq: 4, weight: 12 },
+   149→      ]},
+   150→      { name: 'Unit 2: SQL & Queries', topics: [
+   151→        { name: 'Joins', importance: 'high', freq: 6, weight: 17 },
+   152→        { name: 'Nested Queries', importance: 'medium', freq: 4, weight: 11 },
+   153→        { name: 'Views & Indexes', importance: 'low', freq: 2, weight: 6 },
+   154→      ]},
+   155→      { name: 'Unit 3: Normalization', topics: [
+   156→        { name: 'Functional Dependencies', importance: 'high', freq: 5, weight: 15 },
+   157→        { name: 'Normal Forms (1NF-BCNF)', importance: 'high', freq: 6, weight: 18 },
+   158→        { name: 'Lossless Decomposition', importance: 'medium', freq: 2, weight: 8 },
+   159→      ]},
+   160→      { name: 'Unit 4: Transactions & Concurrency', topics: [
+   161→        { name: 'ACID Properties', importance: 'high', freq: 5, weight: 14 },
+   162→        { name: 'Concurrency Control', importance: 'medium', freq: 3, weight: 10 },
+   163→        { name: 'Deadlock Handling', importance: 'low', freq: 2, weight: 6 },
+   164→      ]},
+   165→    ],
+   166→    questions: [
+   167→      mcq('Which normal form removes transitive dependencies?', 'Normal Forms (1NF-BCNF)', ['1NF', '2NF', '3NF', 'BCNF'], 2, '3NF ensures no non-prime attribute is transitively dependent on a candidate key.', 'MEDIUM'),
+   168→      mcq('In ACID properties, the "D" stands for:', 'ACID Properties', ['Distribution', 'Durability', 'Determinism', 'Dependency'], 1, 'Durability guarantees committed transactions survive system failures.', 'EASY'),
+   169→      mcq('Which JOIN returns unmatched rows from BOTH tables?', 'Joins', ['INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'FULL OUTER JOIN'], 3),
+   170→      mcq('A relation can have how many primary keys?', 'Keys & Constraints', ['Zero', 'Exactly one', 'At most two', 'Unlimited'], 1, 'A relation has exactly one primary key but may have several candidate keys.', 'EASY'),
+   171→      mcq('Which command removes the table structure along with its data?', 'Keys & Constraints', ['DELETE', 'TRUNCATE', 'DROP', 'ERASE'], 2, 'DROP is DDL and removes the entire table definition; DELETE is DML and row-wise.', 'EASY'),
+   172→      mcq('Which of the following is a DDL command?', 'Views & Indexes', ['SELECT', 'INSERT', 'ALTER', 'COMMIT'], 2),
+   173→      mcq('In an ER diagram, a diamond shape represents:', 'ER Diagrams', ['Entity', 'Attribute', 'Relationship', 'Key'], 2, 'Rectangles are entities, ellipses are attributes, diamonds are relationships.', 'EASY'),
+   174→      mcq('Two-phase locking protocol primarily ensures:', 'Concurrency Control', ['Recoverability', 'Serializability', 'Durability', 'Atomicity'], 1, 'The growing and shrinking phases of 2PL guarantee conflict-serializable schedules.', 'MEDIUM'),
+   175→      mcq('Which SQL clause filters rows AFTER grouping has been applied?', 'Nested Queries', ['WHERE', 'HAVING', 'ORDER BY', 'GROUP BY'], 1),
+   176→      mcq('A decomposition is lossless when the common attributes:', 'Lossless Decomposition', ['Are non-prime', 'Form a superkey of at least one relation', 'Are foreign keys', 'Have no dependencies'], 1, 'R1∩R2 must be a superkey of R1 or R2 for the join to restore the original relation.', 'HARD'),
+   177→      short('Explain the ACID properties of transactions with one example each.', 'ACID Properties', 5, 'EASY'),
+   178→      short('What is normalization? Why is it necessary in database design?', 'Normal Forms (1NF-BCNF)', 5, 'MEDIUM'),
+   179→      short('Compare DELETE, TRUNCATE and DROP commands.', 'Keys & Constraints', 5, 'MEDIUM'),
+   180→      long('Explain normalization from 1NF up to BCNF with a suitable example at each stage.', 'Normal Forms (1NF-BCNF)', 10, 'HARD'),
+   181→      long('Explain concurrency control using the two-phase locking protocol. Discuss deadlock handling strategies.', 'Concurrency Control', 10, 'HARD'),
+   182→      viva('What is a foreign key constraint?', 'Keys & Constraints'),
+   183→      viva('Why is BCNF stricter than 3NF?', 'Normal Forms (1NF-BCNF)'),
+   184→      viva('What is a view and when is it useful?', 'Views & Indexes'),
+   185→      viva('When would you deliberately denormalize a schema?', 'Normal Forms (1NF-BCNF)'),
+   186→      pyq('Explain various types of joins in SQL with examples.', 'Joins', 2025, 10, 'LONG_ANSWER'),
+   187→      pyq('Normalize the given relation up to BCNF.', 'Normal Forms (1NF-BCNF)', 2025, 10, 'LONG_ANSWER'),
+   188→      pyq('Explain ACID properties with examples.', 'ACID Properties', 2024, 5, 'SHORT_ANSWER'),
+   189→      pyq('Write a nested query to find employees earning above the average salary.', 'Nested Queries', 2024, 5, 'SHORT_ANSWER'),
+   190→      pyq('Draw an ER diagram for a university database.', 'ER Diagrams', 2023, 10, 'LONG_ANSWER'),
+   191→      pyq('Explain functional dependencies and their types.', 'Functional Dependencies', 2023, 5, 'SHORT_ANSWER'),
+   192→      pyq('Which normal form deals with transitive dependency?', 'Normal Forms (1NF-BCNF)', 2022, 1, 'MCQ', 'EASY', ['1NF', '2NF', '3NF', '4NF'], 2),
+   193→      pyq('What is a lossless join decomposition?', 'Lossless Decomposition', 2022, 5, 'SHORT_ANSWER'),
+   194→    ],
+   195→    experiments: [
+   196→      { title: 'ER Diagram to Normalized Schema', description: 'Design an ER diagram for a library management system, convert it to relational schema and normalize up to 3NF/BCNF.', objective: 'Practice conceptual modelling and normalization.', instructions: '1. Identify entities, attributes, relationships.\n2. Draw the ER diagram.\n3. Convert to tables with keys.\n4. Check FDs and normalize.', expected: 'A BCNF-compliant schema with all FDs documented.', marks: 10 },
+   197→      { title: 'SQL Joins & Nested Queries Lab', description: 'Write SQL queries using inner/left/full joins and nested subqueries against the sample university database.', objective: 'Master complex SQL retrieval.', instructions: '1. Load sample schema.\n2. Write 10 queries covering joins and subqueries.\n3. Verify results.', expected: '10 correct result sets with query scripts.', marks: 10 },
+   198→      { title: 'Transaction & ACID Demonstration', description: 'Demonstrate atomicity and isolation using explicit transactions with rollback scenarios.', objective: 'Understand transaction semantics in a real RDBMS.', instructions: '1. BEGIN a transaction.\n2. Apply partial updates.\n3. Simulate failure and ROLLBACK.\n4. Show isolation with two sessions.', expected: 'Rollback logs and consistent final states.', marks: 10 },
+   199→    ],
+   200→    materials: [
+   201→      { type: 'SYLLABUS', title: 'DBMS Syllabus 2025', file: 'dbms_syllabus.pdf', size: 198658 },
+   202→      { type: 'LAB_MANUAL', title: 'DBMS Lab Manual', file: 'dbms_lab_manual.pdf', size: 943718 },
+   203→      { type: 'PYQ', title: 'DBMS PYQs 2022-2024', file: 'dbms_pyq.pdf', size: 1258291 },
+   204→    ],
+   205→  },
+   206→  {
+   207→    name: 'Computer Networks',
+   208→    code: 'CS503',
+   209→    description: 'Layered network architectures, protocols, routing, transport mechanisms and networked applications.',
+   210→    units: [
+   211→      { name: 'Unit 1: Network Fundamentals', topics: [
+   212→        { name: 'OSI Model', importance: 'high', freq: 7, weight: 19 },
+   213→        { name: 'TCP/IP Model', importance: 'high', freq: 5, weight: 14 },
+   214→        { name: 'Transmission Media', importance: 'low', freq: 2, weight: 5 },
+   215→      ]},
+   216→      { name: 'Unit 2: Data Link Layer', topics: [
+   217→        { name: 'Error Detection (CRC)', importance: 'medium', freq: 4, weight: 11 },
+   218→        { name: 'Sliding Window Protocols', importance: 'high', freq: 4, weight: 12 },
+   219→        { name: 'MAC Protocols', importance: 'low', freq: 2, weight: 6 },
+   220→      ]},
+   221→      { name: 'Unit 3: Network Layer', topics: [
+   222→        { name: 'IP Addressing & Subnetting', importance: 'high', freq: 6, weight: 16 },
+   223→        { name: 'Routing Algorithms', importance: 'medium', freq: 4, weight: 12 },
+   224→        { name: 'Fragmentation', importance: 'low', freq: 1, weight: 4 },
+   225→      ]},
+   226→      { name: 'Unit 4: Transport Layer', topics: [
+   227→        { name: 'TCP vs UDP', importance: 'high', freq: 6, weight: 17 },
+   228→        { name: 'Congestion Control', importance: 'medium', freq: 3, weight: 9 },
+   229→        { name: 'Three-way Handshake', importance: 'high', freq: 3, weight: 10 },
+   230→      ]},
+   231→    ],
+   232→    questions: [
+   233→      mcq('How many layers does the OSI reference model define?', 'OSI Model', ['4', '5', '7', '9'], 2, 'Physical, Data Link, Network, Transport, Session, Presentation and Application.', 'EASY'),
+   234→      mcq('Which OSI layer is responsible for routing packets across networks?', 'Routing Algorithms', ['Data Link', 'Network', 'Transport', 'Session'], 1),
+   235→      mcq('The minimum TCP header size is:', 'TCP vs UDP', ['8 bytes', '16 bytes', '20 bytes', '32 bytes'], 2),
+   236→      mcq('Which transport protocol is connectionless?', 'TCP vs UDP', ['TCP', 'UDP', 'Both', 'Neither'], 1, 'UDP sends datagrams without handshakes, ordering or retransmission.', 'EASY'),
+   237→      mcq('Which protocol resolves an IP address to a MAC address?', 'Error Detection (CRC)', ['DNS', 'ARP', 'DHCP', 'ICMP'], 1),
+   238→      mcq('Sliding window protocols are primarily used for:', 'Sliding Window Protocols', ['Encryption', 'Flow and error control', 'Routing', 'Addressing'], 1, 'The window bounds unacknowledged data, enabling efficient reliable transfer.', 'EASY'),
+   239→      mcq('Which application layer protocol traditionally uses port 80?', 'OSI Model', ['FTP', 'SMTP', 'HTTP', 'DNS'], 2, 'HTTP uses 80 by default and HTTPS uses 443.', 'EASY'),
+   240→      mcq('CRC at the data link layer is used for:', 'Error Detection (CRC)', ['Congestion control', 'Error detection', 'Routing', 'Encryption'], 1),
+   241→      mcq('The TCP three-way handshake sequence is:', 'Three-way Handshake', ['SYN, ACK, FIN', 'SYN, SYN-ACK, ACK', 'ACK, SYN, ACK', 'SYN, ACK, SYN-ACK'], 1),
+   242→      mcq('An IPv4 address consists of how many bits?', 'IP Addressing & Subnetting', ['16', '32', '64', '128'], 1, 'IPv6 uses 128 bits.', 'EASY'),
+   243→      short('Differentiate the OSI and TCP/IP models.', 'OSI Model', 5, 'EASY'),
+   244→      short('Compare TCP and UDP with suitable applications.', 'TCP vs UDP', 5, 'MEDIUM'),
+   245→      short('Explain subnetting with a class-C example.', 'IP Addressing & Subnetting', 5, 'MEDIUM'),
+   246→      long('Explain the OSI reference model. Describe the function of each layer with its protocols.', 'OSI Model', 10, 'MEDIUM'),
+   247→      long('Explain TCP congestion control: slow start, congestion avoidance, fast retransmit and fast recovery.', 'Congestion Control', 10, 'HARD'),
+   248→      viva('What is a default gateway?', 'IP Addressing & Subnetting'),
+   249→      viva('Difference between a hub and a switch?', 'MAC Protocols'),
+   250→      viva('What does NAT accomplish?', 'IP Addressing & Subnetting'),
+   251→      viva('Why is DNS needed?', 'TCP/IP Model'),
+   252→      pyq('Explain the OSI reference model with functions of each layer.', 'OSI Model', 2025, 10, 'LONG_ANSWER'),
+   253→      pyq('Differentiate TCP and UDP.', 'TCP vs UDP', 2025, 5, 'SHORT_ANSWER'),
+   254→      pyq('Explain subnetting and supernetting with examples.', 'IP Addressing & Subnetting', 2024, 10, 'LONG_ANSWER'),
+   255→      pyq('Compare distance vector and link state routing algorithms.', 'Routing Algorithms', 2024, 5, 'SHORT_ANSWER'),
+   256→      pyq('Explain the sliding window protocol with diagrams.', 'Sliding Window Protocols', 2023, 10, 'LONG_ANSWER'),
+   257→      pyq('Differentiate TCP and UDP. When is UDP preferred?', 'TCP vs UDP', 2023, 5, 'SHORT_ANSWER'),
+   258→      pyq('Which layer does a router operate at?', 'Routing Algorithms', 2022, 1, 'MCQ', 'EASY', ['Physical', 'Data Link', 'Network', 'Transport'], 2),
+   259→      pyq('Write short notes on error detection techniques.', 'Error Detection (CRC)', 2022, 5, 'SHORT_ANSWER'),
+   260→    ],
+   261→    experiments: [
+   262→      { title: 'TCP Socket Programming — Echo Server', description: 'Implement a TCP client and echo server using sockets. The server echoes back any message received from the client.', objective: 'Understand reliable byte-stream communication.', instructions: '1. Create a listening socket.\n2. accept() connections.\n3. recv() data and send() it back.\n4. Handle multiple clients sequentially.', expected: 'Client sends "hello" and receives "hello" back; connection close handled gracefully.', marks: 10 },
+   263→      { title: 'Sliding Window Simulator', description: 'Simulate a Go-Back-N sliding window protocol with configurable window size and loss probability.', objective: 'Visualise flow control and retransmission.', instructions: '1. Model sender/receiver with timers.\n2. Drop packets randomly.\n3. Observe cumulative ACKs and retransmissions.', expected: 'Correct in-order delivery with retransmission statistics.', marks: 10 },
+   264→      { title: 'Subnet Calculator', description: 'Build a tool that computes network address, broadcast address, usable host range and mask from CIDR notation.', objective: 'Apply IP addressing theory.', instructions: '1. Parse a.b.c.d/n.\n2. Compute mask.\n3. Derive network/broadcast.\n4. Validate input.', expected: 'Correct subnet computations for sample inputs like 192.168.10.0/26.', marks: 10 },
+   265→    ],
+   266→    materials: [
+   267→      { type: 'SYLLABUS', title: 'CN Syllabus 2025', file: 'cn_syllabus.pdf', size: 210944 },
+   268→      { type: 'PYQ', title: 'CN PYQs 2022-2025', file: 'cn_pyq.pdf', size: 1081344 },
+   269→      { type: 'NOTES', title: 'CN Layer-wise Notes', file: 'cn_notes.pdf', size: 5242880 },
+   270→    ],
+   271→  },
+   272→  {
+   273→    name: 'Operating Systems',
+   274→    code: 'CS504',
+   275→    description: 'Process management, CPU scheduling, memory management, file systems and deadlock handling.',
+   276→    units: [
+   277→      { name: 'Unit 1: Introduction', topics: [
+   278→        { name: 'OS Types & Services', importance: 'medium', freq: 3, weight: 9 },
+   279→        { name: 'System Calls', importance: 'low', freq: 2, weight: 5 },
+   280→      ]},
+   281→      { name: 'Unit 2: Process Management', topics: [
+   282→        { name: 'CPU Scheduling Algorithms', importance: 'high', freq: 6, weight: 16 },
+   283→        { name: 'Threads & Multithreading', importance: 'medium', freq: 3, weight: 10 },
+   284→        { name: 'Inter-Process Communication', importance: 'low', freq: 2, weight: 6 },
+   285→      ]},
+   286→      { name: 'Unit 3: Memory Management', topics: [
+   287→        { name: 'Paging & TLB', importance: 'high', freq: 5, weight: 14 },
+   288→        { name: 'Segmentation', importance: 'medium', freq: 2, weight: 7 },
+   289→        { name: 'Page Replacement Algorithms', importance: 'high', freq: 5, weight: 15 },
+   290→      ]},
+   291→      { name: 'Unit 4: Deadlocks', topics: [
+   292→        { name: 'Deadlock Detection & Recovery', importance: 'medium', freq: 3, weight: 10 },
+   293→        { name: 'Banker\'s Algorithm', importance: 'high', freq: 4, weight: 12 },
+   294→      ]},
+   295→    ],
+   296→    questions: [
+   297→      mcq('Which CPU scheduling algorithm gives the minimum average waiting time (theoretically)?', 'CPU Scheduling Algorithms', ['FCFS', 'Round Robin', 'Shortest Job First', 'Priority'], 2, 'SJF is provably optimal for average waiting time.', 'MEDIUM'),
+   298→      mcq('Which of the following is NOT a necessary condition for deadlock?', 'Deadlock Detection & Recovery', ['Mutual exclusion', 'Hold and wait', 'Preemption', 'Circular wait'], 2, 'The fourth condition is NO preemption; preemption is a solution, not a cause.', 'MEDIUM'),
+   299→      mcq('LRU page replacement evicts the page that:', 'Page Replacement Algorithms', ['Was least frequently used', 'Has been unused for the longest time', 'Was loaded first', 'Has the largest size'], 1, 'Least Recently Used approximates optimal replacement using locality.', 'EASY'),
+   300→      mcq('Thrashing occurs when:', 'Paging & TLB', ['CPU utilization is too high', 'The system spends most time on page faults', 'Memory is fragmented', 'Disk is full'], 1, 'Over-committed memory leads to constant paging instead of useful work.', 'MEDIUM'),
+   301→      mcq('Which scheduling policy is non-preemptive?', 'CPU Scheduling Algorithms', ['Round Robin', 'SRTF', 'FCFS', 'Preemptive Priority'], 2, 'FCFS runs a process until completion or voluntary block.', 'EASY'),
+   302→      mcq('Banker\'s algorithm is used for:', 'Banker\'s Algorithm', ['Deadlock detection', 'Deadlock avoidance', 'Deadlock recovery', 'Page replacement'], 1, 'It grants requests only when a safe sequence exists.', 'MEDIUM'),
+   303→      mcq('The value of a counting semaphore can be:', 'Inter-Process Communication', ['Only 0 or 1', 'Any non-negative integer', 'Negative, zero or positive', 'Only negative'], 2, 'Negative magnitude equals the number of blocked processes.', 'HARD'),
+   304→      mcq('Paging solves which problem of contiguous memory allocation?', 'Paging & TLB', ['Internal fragmentation', 'External fragmentation', 'Thrashing', 'Belady anomaly'], 1, 'Non-contiguous physical frames eliminate external fragmentation.', 'EASY'),
+   305→      mcq('A zombie process is one that:', 'Threads & Multithreading', ['Consumes excessive CPU', 'Has terminated but whose exit status is not yet collected by its parent', 'Is stuck in a deadlock', 'Has been swapped out'], 1, 'The parent must wait() to reap the child\'s entry.', 'HARD'),
+   306→      mcq('Threads within the same process share:', 'Threads & Multithreading', ['Stack and registers only', 'Code, data and heap but not stacks', 'Nothing', 'Only the heap'], 1, 'Each thread has its own stack/registers; the rest is shared.', 'EASY'),
+   307→      short('Explain the five-state process model with a diagram.', 'CPU Scheduling Algorithms', 5, 'EASY'),
+   308→      short('What is a deadlock? State the four necessary conditions.', 'Deadlock Detection & Recovery', 5, 'MEDIUM'),
+   309→      short('What is virtual memory? How does it benefit multiprogramming?', 'Paging & TLB', 5, 'MEDIUM'),
+   310→      long('Explain paging and TLB. Derive the effective memory access time formula with a hit ratio example.', 'Paging & TLB', 10, 'HARD'),
+   311→      long('Compare FCFS, SJF, Priority and Round Robin scheduling algorithms with a worked example (Gantt chart).', 'CPU Scheduling Algorithms', 10, 'HARD'),
+   312→      viva('What happens during a context switch?', 'CPU Scheduling Algorithms'),
+   313→      viva('Differentiate kernel mode and user mode.', 'System Calls'),
+   314→      viva('What is spooling? Give an example.', 'OS Types & Services'),
+   315→      pyq('Compare CPU scheduling algorithms with examples.', 'CPU Scheduling Algorithms', 2025, 10, 'LONG_ANSWER'),
+   316→      pyq('Explain paging with a neat diagram and TLB workings.', 'Paging & TLB', 2025, 10, 'LONG_ANSWER'),
+   317→      pyq('What is a deadlock? Explain the Banker\'s algorithm.', 'Banker\'s Algorithm', 2024, 10, 'LONG_ANSWER'),
+   318→      pyq('Write short notes on semaphores.', 'Inter-Process Communication', 2024, 5, 'SHORT_ANSWER'),
+   319→      pyq('Explain page replacement algorithms.', 'Page Replacement Algorithms', 2023, 10, 'LONG_ANSWER'),
+   320→      pyq('Which is a non-preemptive scheduling algorithm?', 'CPU Scheduling Algorithms', 2023, 1, 'MCQ', 'EASY', ['Round Robin', 'SRTF', 'FCFS', 'MLFQ'], 2),
+   321→      pyq('Explain virtual memory and demand paging.', 'Paging & TLB', 2022, 10, 'LONG_ANSWER'),
+   322→      pyq('Differentiate process and thread.', 'Threads & Multithreading', 2022, 5, 'SHORT_ANSWER'),
+   323→    ],
+   324→    experiments: [
+   325→      { title: 'CPU Scheduling Simulator', description: 'Simulate FCFS, SJF and Round Robin scheduling on a process set and compute average waiting/turnaround times.', objective: 'Compare scheduling policies quantitatively.', instructions: '1. Input arrival/burst times.\n2. Apply each algorithm.\n3. Draw the Gantt chart.\n4. Compute averages.', expected: 'Gantt charts plus average WT/TAT showing SJF optimal.', marks: 10 },
+   326→      { title: 'Banker\'s Algorithm Implementation', description: 'Implement Banker\'s deadlock avoidance algorithm: compute need, check safety and grant/request resources.', objective: 'Understand safe-state computation.', instructions: '1. Read Allocation/Max matrices.\n2. Compute Need.\n3. Run the safety algorithm.\n4. Handle a resource request.', expected: 'A correct safe sequence (or unsafe verdict) for the sample matrices.', marks: 10 },
+   327→      { title: 'Page Replacement Simulator', description: 'Simulate FIFO, LRU and Optimal page replacement and count page faults for a reference string.', objective: 'Study Belady\'s anomaly and policy trade-offs.', instructions: '1. Take a reference string and frame count.\n2. Apply each algorithm.\n3. Count faults.\n4. Compare results.', expected: 'Fault counts for each policy, including a Belady anomaly case for FIFO.', marks: 10 },
+   328→    ],
+   329→    materials: [
+   330→      { type: 'SYLLABUS', title: 'OS Syllabus 2025', file: 'os_syllabus.pdf', size: 188416 },
+   331→      { type: 'NOTES', title: 'OS Complete Notes', file: 'os_notes.pdf', size: 6291456 },
+   332→    ],
+   333→  },
+   334→  {
+   335→    name: 'Data Structures & Algorithms',
+   336→    code: 'CS505',
+   337→    description: 'Core data structures — lists, stacks, queues, trees, graphs — and algorithm analysis techniques.',
+   338→    units: [
+   339→      { name: 'Unit 1: Linear Structures', topics: [
+   340→        { name: 'Arrays & Operations', importance: 'medium', freq: 2, weight: 7 },
+   341→        { name: 'Linked List Operations', importance: 'high', freq: 4, weight: 12 },
+   342→      ]},
+   343→      { name: 'Unit 2: Stacks & Queues', topics: [
+   344→        { name: 'Stack Applications', importance: 'high', freq: 5, weight: 13 },
+   345→        { name: 'Queue Implementations', importance: 'medium', freq: 3, weight: 9 },
+   346→      ]},
+   347→      { name: 'Unit 3: Trees', topics: [
+   348→        { name: 'Binary Trees & Traversals', importance: 'high', freq: 5, weight: 14 },
+   349→        { name: 'Binary Search Trees', importance: 'high', freq: 4, weight: 12 },
+   350→        { name: 'AVL Trees', importance: 'medium', freq: 3, weight: 9 },
+   351→      ]},
+   352→      { name: 'Unit 4: Graphs & Hashing', topics: [
+   353→        { name: 'Graph Representations', importance: 'medium', freq: 3, weight: 9 },
+   354→        { name: 'BFS/DFS Traversals', importance: 'high', freq: 4, weight: 11 },
+   355→        { name: 'Hashing & Collision Resolution', importance: 'medium', freq: 3, weight: 8 },
+   356→      ]},
+   357→    ],
+   358→    questions: [
+   359→      mcq('Which data structure follows the FIFO principle?', 'Queue Implementations', ['Stack', 'Queue', 'Tree', 'Graph'], 1, 'Queue: first element inserted is the first removed.', 'EASY'),
+   360→      mcq('The worst-case time complexity of binary search on a sorted array is:', 'Arrays & Operations', ['O(n)', 'O(log n)', 'O(n log n)', 'O(1)'], 1),
+   361→      mcq('Which traversal of a BST yields keys in sorted order?', 'Binary Search Trees', ['Preorder', 'Inorder', 'Postorder', 'Level-order'], 1, 'Inorder: left, root, right — sorted for BSTs.', 'EASY'),
+   362→      mcq('Stacks are naturally used for:', 'Stack Applications', ['Job scheduling', 'Function calls and recursion', 'Breadth-first search', 'Level printing'], 1),
+   363→      mcq('The height of a balanced BST containing n nodes is:', 'Binary Search Trees', ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)'], 1),
+   364→      mcq('Which of the following is NOT a standard graph representation?', 'Graph Representations', ['Adjacency matrix', 'Adjacency list', 'Edge list', 'Hash list'], 3),
+   365→      mcq('An AVL tree performs rotation when a node\'s balance factor becomes:', 'AVL Trees', ['0', '1', 'Greater than 1 or less than -1', 'Exactly 2 only'], 2),
+   366→      mcq('The worst case of quicksort occurs when:', 'Arrays & Operations', ['The pivot is always the median', 'The array is already sorted (bad pivot choice)', 'All elements are distinct', 'The array is small'], 1, 'Already-sorted input with first/last pivot yields O(n²) recursion.', 'MEDIUM'),
+   367→      mcq('A circular queue primarily solves the problem of:', 'Queue Implementations', ['Overflow of memory', 'False overflow — unusable slots at the front', 'Slow enqueue', 'Priority inversion'], 1),
+   368→      mcq('Which of these is an open addressing collision technique?', 'Hashing & Collision Resolution', ['Separate chaining', 'Linear probing', 'Rehashing to new table', 'Buckets'], 1),
+   369→      short('Explain stack and queue applications with one example each.', 'Stack Applications', 5, 'EASY'),
+   370→      short('Describe insert and delete operations on a BST.', 'Binary Search Trees', 5, 'MEDIUM'),
+   371→      short('Compare BFS and DFS graph traversals.', 'BFS/DFS Traversals', 5, 'MEDIUM'),
+   372→      long('Explain AVL rotations (LL, RR, LR, RL) with examples.', 'AVL Trees', 10, 'HARD'),
+   373→      long('Explain hashing collision resolution techniques — chaining vs open addressing — with examples.', 'Hashing & Collision Resolution', 10, 'MEDIUM'),
+   374→      viva('What is an abstract data type?', 'Arrays & Operations'),
+   375→      viva('Why do we use asymptotic notation like Big-O?', 'Arrays & Operations'),
+   376→      viva('Which data structure does BFS use, and why?', 'BFS/DFS Traversals'),
+   377→      pyq('Explain tree traversals with examples.', 'Binary Trees & Traversals', 2025, 10, 'LONG_ANSWER'),
+   378→      pyq('Compare sorting algorithms with complexities.', 'Arrays & Operations', 2025, 10, 'LONG_ANSWER'),
+   379→      pyq('Explain AVL tree rotations.', 'AVL Trees', 2024, 10, 'LONG_ANSWER'),
+   380→      pyq('Write algorithms for linked list insertion/deletion.', 'Linked List Operations', 2024, 5, 'SHORT_ANSWER'),
+   381→      pyq('What is the complexity of binary search?', 'Arrays & Operations', 2023, 1, 'MCQ', 'EASY', ['O(n)', 'O(log n)', 'O(1)', 'O(n²)'], 1),
+   382→      pyq('Explain Dijkstra\'s shortest path algorithm.', 'BFS/DFS Traversals', 2023, 10, 'LONG_ANSWER'),
+   383→      pyq('Differentiate BFS and DFS with applications.', 'BFS/DFS Traversals', 2022, 5, 'SHORT_ANSWER'),
+   384→    ],
+   385→    experiments: [
+   386→      { title: 'Singly Linked List Operations', description: 'Implement insertion (head/tail/position), deletion and reversal of a singly linked list.', objective: 'Master pointer manipulation.', instructions: '1. Define the node struct.\n2. Implement each operation.\n3. Print the list after every step.', expected: 'Correct list state after each operation, including reversal.', marks: 10 },
+   387→      { title: 'BST Construction & Traversals', description: 'Build a BST from input keys and print inorder, preorder and postorder traversals; implement search and delete.', objective: 'Understand ordered tree structures.', instructions: '1. Insert keys recursively.\n2. Perform all traversals.\n3. Implement delete with 3 cases.', expected: 'Sorted inorder traversal and correct deletion of a two-child node.', marks: 10 },
+   388→      { title: 'Dijkstra Shortest Path', description: 'Implement Dijkstra\'s algorithm on a weighted graph using a priority queue and print shortest paths from a source.', objective: 'Apply greedy graph algorithms.', instructions: '1. Build adjacency list with weights.\n2. Initialise dist[] to infinity.\n3. Relax edges via a min-heap.\n4. Reconstruct paths.', expected: 'Correct shortest distances and path trees for the sample graph.', marks: 10 },
+   389→    ],
+   390→    materials: [
+   391→      { type: 'SYLLABUS', title: 'DSA Syllabus 2025', file: 'dsa_syllabus.pdf', size: 175104 },
+   392→      { type: 'NOTES', title: 'DSA Handwritten Notes', file: 'dsa_notes.pdf', size: 7340032 },
+   393→    ],
+   394→  },
+   395→]
+   396→
+   397→/* ================= MAIN ================= */
+   398→
+   399→async function main() {
+   400→  console.log('Seeding AgentExam database...')
+   401→
+   402→  // wipe existing data
+   403→  await db.studyPlan.deleteMany()
+   404→  await db.result.deleteMany()
+   405→  await db.answer.deleteMany()
+   406→  await db.mockTest.deleteMany()
+   407→  await db.material.deleteMany()
+   408→  await db.experiment.deleteMany()
+   409→  await db.question.deleteMany()
+   410→  await db.topic.deleteMany()
+   411→  await db.unit.deleteMany()
+   412→  await db.subject.deleteMany()
+   413→  await db.user.deleteMany()
+   414→
+   415→  // ---- demo user ----
+   416→  const demo = await db.user.create({
+   417→    data: {
+   418→      name: 'Arjun Sharma',
+   419→      email: 'demo@agentexam.ai',
+   420→      passwordHash: hashPassword('demo123'),
+   421→      role: 'STUDENT',
+   422→      enrollmentNo: 'SU23CSE101',
+   423→      semester: '5',
+   424→      department: 'Computer Science & Engineering',
+   425→      examDate: new Date(Date.now() + 45 * 24 * 3600 * 1000),
+   426→    },
+   427→  })
+   428→  console.log('Created demo user', demo.email)
+   429→
+   430→  const topicMap: Record<string, string> = {} // "subject::topic" -> topicId
+   431→  const questionIds: Record<string, string[]> = {} // subjectId -> theory question ids
+   432→  const vivaIds: Record<string, string[]> = {}
+   433→  const experimentList: { id: string; subjectId: string; title: string; marks: number }[] = []
+   434→
+   435→  for (const s of SUBJECTS) {
+   436→    const subject = await db.subject.create({
+   437→      data: { name: s.name, code: s.code, description: s.description },
+   438→    })
+   439→
+   440→    // units + topics
+   441→    for (let i = 0; i < s.units.length; i++) {
+   442→      const u = s.units[i]
+   443→      const unit = await db.unit.create({
+   444→        data: { subjectId: subject.id, name: u.name, chapterNo: i + 1 },
+   445→      })
+   446→      for (const t of u.topics) {
+   447→        const topic = await db.topic.create({
+   448→          data: {
+   449→            unitId: unit.id, name: t.name, importance: t.importance,
+   450→            pyqFrequency: t.freq, weightage: t.weight,
+   451→          },
+   452→        })
+   453→        topicMap[`${s.name}::${t.name}`] = topic.id
+   454→      }
+   455→    }
+   456→
+   457→    // questions
+   458→    const theoryIds: string[] = []
+   459→    const vivas: string[] = []
+   460→    for (const q of s.questions) {
+   461→      const topicId = topicMap[`${s.name}::${q.topic}`] || null
+   462→      const created = await db.question.create({
+   463→        data: {
+   464→          subjectId: subject.id,
+   465→          topicId,
+   466→          questionType: q.type,
+   467→          questionText: q.text,
+   468→          options: q.options ? JSON.stringify(q.options) : null,
+   469→          correctAnswer: q.correct ?? null,
+   470→          explanation: q.explanation ?? (q.source === 'PYQ' ? 'Previous year question — practise this pattern.' : null),
+   471→          marks: q.marks ?? 1,
+   472→          difficultyLevel: q.difficulty ?? 'MEDIUM',
+   473→          source: q.source ?? 'MANUAL',
+   474→          sourceReference: q.sourceRef ?? null,
+   475→          year: q.year ?? null,
+   476→        },
+   477→      })
+   478→      if (q.type === 'VIVA') vivas.push(created.id)
+   479→      else theoryIds.push(created.id)
+   480→    }
+   481→    questionIds[subject.id] = theoryIds
+   482→    vivaIds[subject.id] = vivas
+   483→
+   484→    // experiments
+   485→    for (const e of s.experiments) {
+   486→      const exp = await db.experiment.create({
+   487→        data: {
+   488→          subjectId: subject.id, title: e.title, description: e.description,
+   489→          objective: e.objective, instructions: e.instructions,
+   490→          expectedOutput: e.expected, marks: e.marks,
+   491→        },
+   492→      })
+   493→      experimentList.push({ id: exp.id, subjectId: subject.id, title: exp.title, marks: exp.marks })
+   494→    }
+   495→
+   496→    // materials
+   497→    for (const m of s.materials) {
+   498→      await db.material.create({
+   499→        data: {
+   500→          subjectId: subject.id, uploadedBy: demo.id, materialType: m.type,
+   501→          title: m.title, fileName: m.file, fileType: m.file.split('.').pop() || 'pdf',
+   502→          mimeType: 'application/pdf', fileSize: m.size, processingStatus: 'PROCESSED',
+   503→        },
+   504→      })
+   505→    }
+   506→    console.log(`Seeded ${s.name}: ${theoryIds.length} theory Qs, ${vivas.length} viva Qs, ${s.experiments.length} experiments`)
+   507→  }
+   508→
+   509→  // ---- demo test history: 5 theory tests, ascending performance ----
+   510→  const subjects = await db.subject.findMany()
+   511→  const byName = (n: string) => subjects.find(s => s.name.includes(n))!
+   512→
+   513→  const history = [
+   514→    { subject: 'Artificial Intelligence', daysAgo: 20, pct: 48, n: 8 },
+   515→    { subject: 'Database Management', daysAgo: 15, pct: 55, n: 8 },
+   516→    { subject: 'Computer Networks', daysAgo: 10, pct: 62, n: 8 },
+   517→    { subject: 'Artificial Intelligence', daysAgo: 6, pct: 70, n: 8 },
+   518→    { subject: 'Operating Systems', daysAgo: 2, pct: 76, n: 8 },
+   519→  ]
+   520→
+   521→  for (const h of history) {
+   522→    const subject = byName(h.subject)
+   523→    const qs = (questionIds[subject.id] || []).slice(0, h.n)
+   524→    if (!qs.length) continue
+   525→    const allQuestions = await db.question.findMany({ where: { id: { in: qs } } })
+   526→    const totalMarks = allQuestions.reduce((a, q) => a + q.marks, 0)
+   527→    const obtained = Math.round(totalMarks * h.pct) / 100
+   528→
+   529→    const createdAt = new Date(Date.now() - h.daysAgo * 24 * 3600 * 1000)
+   530→    const test = await db.mockTest.create({
+   531→      data: {
+   532→        studentId: demo.id, subjectId: subject.id, testType: 'THEORY',
+   533→        difficultyLevel: 'MEDIUM', totalMarks, durationMinutes: 30,
+   534→        status: 'EVALUATED', questionIds: JSON.stringify(qs),
+   535→        startedAt: createdAt, expiresAt: new Date(createdAt.getTime() + 30 * 60000),
+   536→        submittedAt: new Date(createdAt.getTime() + 22 * 60000), createdAt,
+   537→      },
+   538→    })
+   539→
+   540→    // answers: correct for the fraction matching pct (MCQs), partial for subjective
+   541→    const nCorrect = Math.round(qs.length * h.pct / 100)
+   542→    for (let i = 0; i < allQuestions.length; i++) {
+   543→      const q = allQuestions[i]
+   544→      const isCorrect = i < nCorrect
+   545→      let marksObtained = 0
+   546→      let feedback: string | null = null
+   547→      let selected: string | null = null
+   548→      let text: string | null = null
+   549→
+   550→      if (q.questionType === 'MCQ') {
+   551→        const opts = q.options ? JSON.parse(q.options) as Opt[] : []
+   552→        const correctOpt = opts.find(o => o.is_correct)
+   553→        selected = isCorrect ? (correctOpt?.id ?? 'A') : (opts.find(o => !o.is_correct)?.id ?? 'B')
+   554→        marksObtained = isCorrect ? q.marks : 0
+   555→        feedback = isCorrect ? 'Correct answer.' : `Incorrect — the right option is (${correctOpt?.id}). ${q.explanation ?? ''}`
+   556→      } else {
+   557→        marksObtained = Math.round(q.marks * (isCorrect ? 0.8 : 0.35) * 100) / 100
+   558→        text = isCorrect
+   559→          ? `A structured answer covering the key aspects of ${q.topicId ? 'the topic' : 'the question'} with adequate examples.`
+   560→          : 'A partial answer — key definitions were missing and the example was incomplete.'
+   561→        feedback = isCorrect
+   562→          ? 'Good conceptual coverage. Add diagrams to earn full marks.'
+   563→          : 'Weak on core concepts. Revise the fundamentals of this topic before the next attempt.'
+   564→      }
+   565→
+   566→      await db.answer.create({
+   567→        data: {
+   568→          questionId: q.id, studentId: demo.id, testId: test.id,
+   569→          answerText: text, selectedOptionId: selected, marksObtained, feedback,
+   570→        },
+   571→      })
+   572→    }
+   573→
+   574→    const grade = h.pct >= 90 ? 'A' : h.pct >= 80 ? 'B' : h.pct >= 70 ? 'C' : h.pct >= 60 ? 'D' : 'F'
+   575→    const analytics = {
+   576→      improvement_suggestions: h.pct >= 70
+   577→        ? `Strong performance in ${subject.name}. Focus on the few incorrect areas — revise edge cases and practise one more full-length paper under timed conditions to push past ${Math.min(h.pct + 10, 95)}%.`
+   578→        : `Your accuracy in ${subject.name} is around ${h.pct}%. Prioritise the weak topics listed below: re-read unit notes, then attempt topic-wise easy questions before moving to medium difficulty. Aim to cross 60% on the next mock.`,
+   579→      weak_areas: allQuestions.slice(nCorrect).slice(0, 3).map(q => q.questionText.slice(0, 60)),
+   580→      topic_scores: Object.fromEntries(allQuestions.map((q, i) => [q.questionText.slice(0, 40), i < nCorrect ? 100 : 30])),
+   581→    }
+   582→
+   583→    await db.result.create({
+   584→      data: {
+   585→        testId: test.id, studentId: demo.id, totalMarks, obtainedMarks: obtained,
+   586→        percentage: h.pct, grade, passStatus: h.pct >= 40, analytics: JSON.stringify(analytics),
+   587→        createdAt: new Date(createdAt.getTime() + 23 * 60000),
+   588→      },
+   589→    })
+   590→  }
+   591→
+   592→  // ---- completed practical session ----
+   593→  const aiSubject = byName('Artificial Intelligence')
+   594→  const bfsExp = experimentList.find(e => e.title.includes('BFS'))!
+   595→  const practicalTest = await db.mockTest.create({
+   596→    data: {
+   597→      studentId: demo.id, subjectId: aiSubject.id, testType: 'PRACTICAL',
+   598→      difficultyLevel: 'MEDIUM', totalMarks: bfsExp.marks, durationMinutes: 60,
+   599→      status: 'EVALUATED', questionIds: JSON.stringify([]),
+   600→      startedAt: new Date(Date.now() - 9 * 24 * 3600 * 1000),
+   601→      expiresAt: new Date(Date.now() - 9 * 24 * 3600 * 1000 + 3600000),
+   602→      submittedAt: new Date(Date.now() - 9 * 24 * 3600 * 1000 + 2700000),
+   603→      createdAt: new Date(Date.now() - 9 * 24 * 3600 * 1000),
+   604→    },
+   605→  })
+   606→  await db.answer.create({
+   607→    data: {
+   608→      questionId: (await db.question.findFirst({ where: { subjectId: aiSubject.id } }))!.id,
+   609→      studentId: demo.id, testId: practicalTest.id,
+   610→      answerText: 'BFS implemented with queue frontier, visited set and parent tracking...',
+   611→      marksObtained: 8.5, feedback: 'Correct level-order traversal and clean queue handling. Edge cases (disconnected components) handled well.',
+   612→    },
+   613→  })
+   614→  await db.result.create({
+   615→    data: {
+   616→      testId: practicalTest.id, studentId: demo.id, totalMarks: 10, obtainedMarks: 8.5,
+   617→      percentage: 85, grade: 'A', passStatus: true,
+   618→      analytics: JSON.stringify({
+   619→        improvement_suggestions: 'Excellent implementation. To score full marks, add complexity analysis comments and unit tests for empty graph inputs.',
+   620→      }),
+   621→    },
+   622→  })
+   623→
+   624→  // ---- completed viva session (DBMS) ----
+   625→  const dbmsSubject = byName('Database Management')
+   626→  const vivaQs = vivaIds[dbmsSubject.id].slice(0, 5)
+   627→  const vivaTest = await db.mockTest.create({
+   628→    data: {
+   629→      studentId: demo.id, subjectId: dbmsSubject.id, testType: 'VIVA',
+   630→      difficultyLevel: 'MEDIUM', totalMarks: 10, durationMinutes: 15,
+   631→      status: 'EVALUATED', questionIds: JSON.stringify(vivaQs),
+   632→      startedAt: new Date(Date.now() - 4 * 24 * 3600 * 1000),
+   633→      expiresAt: new Date(Date.now() - 4 * 24 * 3600 * 1000 + 900000),
+   634→      submittedAt: new Date(Date.now() - 4 * 24 * 3600 * 1000 + 720000),
+   635→      createdAt: new Date(Date.now() - 4 * 24 * 3600 * 1000),
+   636→    },
+   637→  })
+   638→  const vivaQuestions = await db.question.findMany({ where: { id: { in: vivaQs } } })
+   639→  for (let i = 0; i < vivaQuestions.length; i++) {
+   640→    const score = i < 3 ? 2 : 1
+   641→    await db.answer.create({
+   642→      data: {
+   643→        questionId: vivaQuestions[i].id, studentId: demo.id, testId: vivaTest.id,
+   644→        answerText: 'Student verbal answer recorded.',
+   645→        marksObtained: score,
+   646→        feedback: score === 2
+   647→          ? 'Clear, confident and technically precise.'
+   648→          : 'Partially correct — the core idea was right but the terminology needs sharpening.',
+   649→      },
+   650→    })
+   651→  }
+   652→  await db.result.create({
+   653→    data: {
+   654→      testId: vivaTest.id, studentId: demo.id, totalMarks: 10, obtainedMarks: 8,
+   655→      percentage: 80, grade: 'A', passStatus: true,
+   656→      analytics: JSON.stringify({
+   657→        improvement_suggestions: 'Strong viva performance overall. Practise articulating BCNF vs 3NF differences — that answer lacked precision.',
+   658→      }),
+   659→    },
+   660→  })
+   661→
+   662→  // ---- study plan (7 days, starting yesterday) ----
+   663→  const startDate = new Date()
+   664→  startDate.setHours(0, 0, 0, 0)
+   665→  startDate.setDate(startDate.getDate() - 1)
+   666→
+   667→  const taskPool = [
+   668→    { title: 'Study: A* Search & Heuristics', subject: 'Artificial Intelligence', type: 'study', priority: 'high', duration: 60 },
+   669→    { title: 'Practice: BFS & DFS problems', subject: 'Artificial Intelligence', type: 'practice', priority: 'high', duration: 45 },
+   670→    { title: 'Revise: Intelligent Agents notes', subject: 'Artificial Intelligence', type: 'revision', priority: 'medium', duration: 30 },
+   671→    { title: 'Study: Normalization (1NF-BCNF)', subject: 'Database Management Systems', type: 'study', priority: 'high', duration: 75 },
+   672→    { title: 'Practice: SQL joins worksheet', subject: 'Database Management Systems', type: 'practice', priority: 'medium', duration: 45 },
+   673→    { title: 'Study: OSI & TCP/IP Models', subject: 'Computer Networks', type: 'study', priority: 'high', duration: 60 },
+   674→    { title: 'Practice: Subnetting problems', subject: 'Computer Networks', type: 'practice', priority: 'medium', duration: 45 },
+   675→    { title: 'Study: CPU Scheduling Algorithms', subject: 'Operating Systems', type: 'study', priority: 'high', duration: 60 },
+   676→    { title: 'Practice: Banker\'s algorithm numericals', subject: 'Operating Systems', type: 'practice', priority: 'medium', duration: 45 },
+   677→    { title: 'Study: Page Replacement Algorithms', subject: 'Operating Systems', type: 'study', priority: 'medium', duration: 50 },
+   678→    { title: 'Practice: BST & AVL rotations', subject: 'Data Structures & Algorithms', type: 'practice', priority: 'high', duration: 45 },
+   679→    { title: 'Revise: Graph traversals', subject: 'Data Structures & Algorithms', type: 'revision', priority: 'low', duration: 30 },
+   680→    { title: 'Mock Test: Artificial Intelligence (medium)', subject: 'Artificial Intelligence', type: 'test', priority: 'high', duration: 30 },
+   681→    { title: 'Mock Test: DBMS (mixed)', subject: 'Database Management Systems', type: 'test', priority: 'medium', duration: 30 },
+   682→    { title: 'Revise: ACID properties + transactions', subject: 'Database Management Systems', type: 'revision', priority: 'medium', duration: 30 },
+   683→    { title: 'Study: Congestion Control in TCP', subject: 'Computer Networks', type: 'study', priority: 'low', duration: 40 },
+   684→    { title: 'Practice: Dijkstra problems', subject: 'Data Structures & Algorithms', type: 'practice', priority: 'low', duration: 40 },
+   685→    { title: 'Revise: Deadlock conditions & Banker\'s algorithm', subject: 'Operating Systems', type: 'revision', priority: 'low', duration: 30 },
+   686→    { title: 'Final revision: High-weightage topics', subject: 'Artificial Intelligence', type: 'revision', priority: 'medium', duration: 60 },
+   687→    { title: 'Mock Viva: DBMS rapid fire', subject: 'Database Management Systems', type: 'test', priority: 'low', duration: 15 },
+   688→    { title: 'Study: Hashing & collision resolution', subject: 'Data Structures & Algorithms', type: 'study', priority: 'medium', duration: 45 },
+   689→  ]
+   690→
+   691→  const days: { date: string; tasks: unknown[] }[] = []
+   692→  let taskIdx = 0
+   693→  for (let d = 0; d < 7; d++) {
+   694→    const date = new Date(startDate)
+   695→    date.setDate(date.getDate() + d)
+   696→    const tasks = []
+   697→    for (let t = 0; t < 3; t++) {
+   698→      const tp = taskPool[taskIdx % taskPool.length]
+   699→      taskIdx++
+   700→      tasks.push({
+   701→        id: `task-${d * 3 + t + 1}`,
+   702→        title: tp.title,
+   703→        subject: tp.subject,
+   704→        type: tp.type,
+   705→        priority: tp.priority,
+   706→        duration: tp.duration,
+   707→        completed: d < 1 && t < 2, // a couple done on day 1
+   708→        date: date.toISOString().slice(0, 10),
+   709→      })
+   710→    }
+   711→    days.push({ date: date.toISOString().slice(0, 10), tasks })
+   712→  }
+   713→
+   714→  const endDate = new Date(startDate)
+   715→  endDate.setDate(endDate.getDate() + 6)
+   716→  await db.studyPlan.create({
+   717→    data: {
+   718→      studentId: demo.id, startDate, endDate,
+   719→      planJson: JSON.stringify({ days }), status: 'ACTIVE',
+   720→    },
+   721→  })
+   722→
+   723→  const counts = {
+   724→    subjects: await db.subject.count(),
+   725→    units: await db.unit.count(),
+   726→    topics: await db.topic.count(),
+   727→    questions: await db.question.count(),
+   728→    experiments: await db.experiment.count(),
+   729→    materials: await db.material.count(),
+   730→    tests: await db.mockTest.count(),
+   731→    results: await db.result.count(),
+   732→  }
+   733→  console.log('Seed complete:', counts)
+   734→  console.log('Login with: demo@agentexam.ai / demo123')
+   735→}
+   736→
+   737→main()
+   738→  .catch(e => { console.error(e); process.exit(1) })
+   739→  .finally(() => db.$disconnect())
+   740→

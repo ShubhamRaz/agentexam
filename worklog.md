@@ -1,0 +1,130 @@
+# AgentExam Project Worklog
+
+---
+Task ID: 1-3
+Agent: main (Z.ai Code)
+Task: Foundation — Prisma schema, seed data, lib contracts for AgentExam port
+
+Work Log:
+- Extracted and analyzed uploaded project (React+Vite frontend, FastAPI backend) via 2 Explore agents; full blueprints captured.
+- Ported DB schema to Prisma/SQLite: User, Subject, Unit, Topic, Material, Question, MockTest, Answer, Result, Experiment, StudyPlan. Pushed with `bun run db:push`.
+- Created `prisma/seed.ts` — 5 CSE subjects (AI, DBMS, CN, OS, DSA), 20 units, 59 topics, 135 questions (MCQ/SHORT/LONG/VIVA/PYQ with years), 15 experiments, 13 materials, 5 completed theory tests + practical + viva history with results, 7-day study plan. Demo user: demo@agentexam.ai / demo123.
+- Created `src/lib/auth.ts` — JWT (jose, HS256, 7d) + scrypt password hashing + getAuthUser(req) helper.
+- Created `src/lib/types.ts` — ALL shared API types matching original frontend's consumed shapes (snake_case fields like question_type preserved).
+- Created `src/lib/ai.ts` — z-ai-web-dev-sdk wrappers: evaluateSubjectiveAnswer, evaluateVivaAnswer, evaluatePracticalSubmission, generateImprovementSuggestions; all with deterministic fallbacks.
+- Created `src/lib/api-client.ts` — frontend fetch wrapper w/ Bearer token, 401 handling.
+- Created `src/lib/helpers.ts` — presentation helpers (score colors, dates, initials).
+
+Stage Summary:
+- DB seeded at db/custom.db. Login: demo@agentexam.ai / demo123 (examDate +45 days).
+- Design language: violet primary (#7C3AED family) + cyan accent + AI purple, light SaaS theme, Tailwind + shadcn/ui. NOT indigo/blue per policy.
+- Views are client components in `src/views/*.tsx`; single page at `/` switches views via state (ViewId union in types.ts).
+- API routes go in `src/app/api/**/route.ts`, always JSON, auth via Authorization Bearer → getAuthUser(req) from @/lib/auth.
+- AI SDK: `import ZAI from 'z-ai-web-dev-sdk'` — backend only. See src/lib/ai.ts for established patterns.
+
+---
+Task ID: 4
+Agent: full-stack-developer
+Task: Build ALL backend API routes for AgentExam under src/app/api/** (auth, subjects, materials, PYQs, exam engine, results, practical, viva, performance, readiness, study plan, profile, dashboard), following the contracts in src/lib/types.ts, src/lib/auth.ts, src/lib/ai.ts and prisma/schema.prisma exactly.
+
+Work Log:
+- Read all foundation files; mapped every response shape from src/lib/types.ts to a route handler.
+- Created shared module src/app/api/lib/compute.ts (NOT _lib — Turbopack rejects underscore folders for module resolution) holding: evaluated-test aggregation, answer-row extraction w/ manual topic join, topic performance (strong/weak/insufficient logic), weak topics, study-plan generation/mapping/today-tasks, material mapper, misc utils.
+- Discovered Prisma schema has no `topic` relation on Question and no `subject` relation on MockTest (plain string FKs) — all such joins are done with batch lookups; invalid `include`s were fixed early.
+- Discovered Turbopack (dev) can't resolve relative parent imports (`../../lib/compute`) from route files — all shared imports use the alias `@/app/api/lib/compute`.
+- Implemented 26 route files, all with `export const dynamic = 'force-dynamic'`, NextRequest auth via getAuthUser, 401 via unauthorized(), per-user data isolation, JSON responses, awaited async params for dynamic segments.
+- Exam engine: create (difficulty preference w/ fallback + shuffle), start (DRAFT→IN_PROGRESS once, idempotent re-start, options stripped of is_correct), answer upsert (validates question membership, blocks after submit), submit (Promise.all AI evaluation of subjective answers, MCQ auto-grading w/ correct option + explanation feedback, 'Unattempted.' for blanks, grade/pass/percentage, weak/strong areas by topic ratio 40%/80%, AI improvement suggestions, Result upsert, status EVALUATED, full ExamResult payload).
+- Practical: list derives status/score from PRACTICAL MockTests via questionIds=[experimentId] convention; start creates IN_PROGRESS test; submit runs evaluatePracticalSubmission, writes Result directly (no Answer row — FK constraint), returns {score, percentage, feedback, suggestions}. Also aligned the seeded BFS practical test (questionIds '[]' → [bfsId]) so the seeded 85% shows as completed.
+- Viva: start picks ≤5 random VIVA questions (400 if none), answers are AI-graded per question via evaluateVivaAnswer with instant VivaEvaluation response, submit sums marks + AI suggestions → Result.
+- Performance/readiness/dashboard/study-plan built on the shared computations; study-plan GET auto-generates a plan when none exists, POST /generate force-regenerates (archives old), PATCH task status toggles completion in planJson.
+- Tested everything with curl (login → token → all endpoints), including error paths (401 no/bad token, 400 invalid inputs, 404 missing resources, 409 duplicate email, double-submit 400).
+- Lint clean on src/app/api/** (project-wide lint errors only exist in the pre-existing agentexam-extracted/ folder, untouched); tsc --noEmit clean for API files.
+
+Stage Summary:
+- Files created (27): src/app/api/lib/compute.ts + 26 route.ts files — auth/register, auth/login, auth/me, subjects, subjects/[id]/units, materials, materials/upload, pyqs, exams, exams/[id]/start, exams/[id]/answers/[qid], exams/[id]/submit, results/exam/[id], practical, practical/start, practical/[id]/submit, viva/start, viva/[id]/answers/[qid], viva/[id]/submit, performance/me, performance/me/readiness, study-plan/me, study-plan/generate, study-plan/tasks/[id]/status, students/me, dashboard.
+- All key flows verified live with real AI: exam submit (9/27 = 33% w/ per-question feedback + suggestions, ~3s), 100% MCQ exam, viva answer grading (2/2 and 1/2 with examiner-style feedback), practical code evaluation (4/10 with improvement bullets).
+- Demo account state after testing: 11 evaluated tests (curated seed history + live-tested theory 33%/100%, viva 38%, practical 40%), 2 completed practicals (BFS 85% seeded, BST 40% tested), regenerated study plan driven by real weak topics, one extra uploaded material (bignotes, DSA).
+- Login: demo@agentexam.ai / demo123. All API endpoints return the snake_case shapes from src/lib/types.ts.
+- Next agent note: frontend should call these via src/lib/api-client.ts with Bearer token; see agent-ctx/4-full-stack-developer.md for the full endpoint matrix and the two Turbopack/Prisma gotchas.
+
+---
+Task ID: 6
+Agent: frontend-styling-expert
+Task: Build the 4 core frontend views (Dashboard, Materials, Syllabus Analysis, PYQ Analysis) in src/views/, ported from the original React app against the lib contracts + bits.tsx components.
+
+Work Log:
+- Read worklog + all contract files (types.ts, api-client.ts, helpers.ts, bits.tsx, auth-context.tsx) and the 4 original JSX pages; verified live API shapes via curl (dashboard, materials, subjects, units, pyqs — token via demo login).
+- Created src/views/dashboard.tsx (DashboardView({ onNavigate })): greeting header (getGreeting + first name from useAuth + 👋 + daysLeft countdown), readiness hero (violet-950→violet-700→cyan-600 gradient, decorative blurred circles, AIBadge-style label, getScoreLabel heading, 160px white ProgressCircle, View Details→readiness / Start Practice→exam), 4 StatCards (Flame/amber, Trophy/emerald, BookOpen/violet, Clock/cyan with change indicators), 2-col grid with Today's Study Plan (round checkbox toggles PATCH /api/study-plan/tasks/{id}/status {status} optimistically w/ revert + sonner toast; subject badge, priority dot, Clock duration) + "Score Trend" AreaChart (#7C3AED line, gradient fill, no dots — trend derived from recentTests since DashboardData carries no scoreTrend field), Subject Performance rows (getScoreBarColor bars, "N tests · N% accuracy"), Weak Topics card (AIBadge "AI Identified", score chip + recommendation + "Practice Weak Topics"→exam), Recent Activity rows (emoji icon, timeAgo, ScorePill). Skeleton loading + ErrorCard retry + staggered animate-fade-in-up.
+- Created src/views/materials.tsx (MaterialsView): fixed the original's two bugs — onDrop now actually processes e.dataTransfer.files, and "Add New Subject" uses a proper shadcn Dialog+Input (POST /api/subjects) instead of window.prompt, both with sonner feedback. Target-subject Select + upload zone (drag & drop + click-to-browse multi-file input, accept .pdf/.doc/.docx/.jpg/.png, 10MB validation, toast.warning "Select a subject first" when no subject). Sequential api.upload('/materials/upload', FormData{file, subject_id, material_type}) per file with live per-file progress list (Loader2/CheckCircle2/XCircle) and list refresh; material_type = active tab type (NOTES default). Tabs with counts (All/Syllabus/PYQs/Notes/Lab Manuals) + name search; auto-fill minmax(240px,1fr) card grid with per-type colored tiles (SYLLABUS=violet FileText, PYQ=amber ClipboardList, NOTES=cyan BookOpen, LAB_MANUAL=emerald FlaskConical), status badges (processed=emerald CheckCircle2 "Analyzed", processing=amber Loader2 spin, uploading/failed variants), formatDate. Per-tab FolderOpen empty state + skeleton grid.
+- Created src/views/syllabus-analysis.tsx (SyllabusAnalysisView): "All Subjects" pill default (aggregates units across every subject via Promise.all, unit rows show subject name in that mode) + per-subject pills + AIBadge "AI Analyzed". 2-col layout (1fr + 360px rail, stacks on mobile): left "Syllabus Breakdown" accordion (custom, ChevronDown rotate-180, first unit auto-expanded; topic rows = name + ImportanceBadge + "📄 N×" + violet weightage ProgressBar scaled to max 20 with right-aligned % number); right rail = horizontal recharts BarChart of top-8 topics by weightage colored by importance (high #EF4444 / medium #F59E0B / low #10B981, rounded, h260) + "🔥 Most Important Topics" top-6 numbered list (pyq count + violet weightage badge) + Summary card (High/Medium/Low counts using IMPORTANCE_STYLES/ImportanceBadge). BookOpen empty state ("Upload a syllabus to see analysis") + per-subject switch loading + skeleton/error states.
+- Created src/views/pyq-analysis.tsx (PYQAnalysisView): filter bar with subject pill tabs, year chips (All Years + years derived from data), search (question+topic). Charts row: "Topic Frequency" horizontal BarChart (top 8 topics by count of PYQs, CHART_COLORS per bar, AIBadge) + "Question Type Distribution" donut PieChart (innerRadius 55, outerRadius 90, paddingAngle 2, CHART_COLORS, legend + custom % label renderer). shadcn Table: violet year badge, subject, topic, type badge (Long Answer=violet/Short Answer=amber/Objective=cyan), marks, frequency "N×" (red+bold when ≥3), truncated question w/ title tooltip. Empty state (with Clear filters action) + loading skeletons; all analytics client-side from GET /api/pyqs.
+- Style rules followed: light slate theme, violet-600 #7C3AED primary, cyan accents, NO indigo/blue (original PYQ #4F46E5 replaced by CHART_COLORS); every root is animate-fade-in-up space-y-6 starting with ViewHeader; white rounded-xl shadow-xs cards with hover:shadow-md lifts; mobile-first sm:/lg: breakpoints; useEffect + useState<T|null> fetch pattern; no `any`.
+- Verified: `bunx tsc --noEmit` — zero errors in the 4 new files (only pre-existing errors elsewhere: prisma/seed, skills, examples, bits.tsx:90 `<icon>` intrinsic quirk in AICard — untouched shared file); targeted `eslint` on the 4 files — clean; project-wide `bun run lint` has only the 3 pre-existing errors (agentexam-extracted/ ×2, auth-context.tsx) — none mine. No other files touched.
+
+Stage Summary:
+- Files created (4): src/views/dashboard.tsx, src/views/materials.tsx, src/views/syllabus-analysis.tsx, src/views/pyq-analysis.tsx — each with named + default exports matching the requested signatures.
+- All 4 views are self-contained client components speaking to the live API through src/lib/api-client.ts (api.get/post/patch/upload) and reuse bits.tsx primitives (ViewHeader, StatCard, AIBadge, ProgressCircle, SectionCard, EmptyState, ErrorCard, ScorePill, ImportanceBadge).
+- Notable decisions: dashboard score trend derived from recentTests (DashboardData has no scoreTrend); syllabus "All Subjects" mode aggregates all subjects' units; study-task checkbox does optimistic PATCH with revert-on-error; materials upload validates size client-side and disables the zone while uploading.
+- Next agent note: wire these into src/app/page.tsx via the ViewId union ('dashboard' | 'materials' | 'syllabus' | 'pyq-analysis' | …) with sidebar/header navigation (src/components/app/sidebar.tsx + header.tsx exist); DashboardView takes onNavigate(ViewId), the other three take no props. Toaster already mounted in layout.tsx (sonner, richColors, top-right). Login: demo@agentexam.ai / demo123.
+
+---
+Task ID: 8
+Agent: frontend-styling-expert
+Task: Build Performance / Readiness / Study Plan / Profile views (src/views/performance.tsx, readiness.tsx, study-plan.tsx, profile.tsx) — ports of original React pages onto the Next.js 16 + shadcn/ui + Tailwind stack, coded strictly against the lib/bits contracts.
+
+Work Log:
+- Read worklog + all contract files (types.ts, api-client.ts, helpers.ts, bits.tsx, auth-context.tsx) + the 4 original JSX pages; verified live API shapes via curl (performance/me, performance/me/readiness, study-plan/me, study-plan/tasks/{id}/status PATCH, students/me GET+PUT, auth/me for examDate).
+- performance.tsx — PerformanceView(): 4 StatCards (BookOpen violet / Award emerald + improvement change / Target cyan / TrendingUp amber); Score + Accuracy AreaCharts (recharts, #7C3AED & #10B981, gradient fills, dot=false, h220, 'd MMM' tickFormatter); Subject Comparison RadarChart (score #7C3AED .3 + accuracy #06B6D4 .2, PolarGrid #E2E8F0); Topic Performance scroll list (max-h-80 ae-scroll, subject badge, thin getScoreBarColor bar, ScorePill + Strong/Weak/Low-attempts status badge); Weak Topics grid (border-l-4 red, bg-red-50/50, 💡 recommendation); totalTests===0 → EmptyState (BarChart3).
+- readiness.tsx — ReadinessView({ onNavigate }): gradient hero (violet-950→violet-700→cyan-600) with 180px white ProgressCircle + status chip (Exam Ready/Getting There/Needs Work/Insufficient Data), meta row (exam date + days left from useAuth().user.examDate, study hours needed); 3 white breakdown tiles (accuracy / topics attempted / hours needed, getScoreColor numbers); Subject Readiness rows (status badge + colored score + getScoreBarColor bar + "X of Y topics ready"); Risk Areas border-l-4 cards (high=red, medium=amber); AI Recommendations AICard (priority-numbered circles, Clock+estimatedTime chip, priority badge) + Start Practicing button → onNavigate('exam').
+- study-plan.tsx — StudyPlanView(): overview card (Sparkles, "AI-optimized for your exam · N days · M tasks", AIBadge, overall progress bar "X of Y tasks completed", ghost Regenerate Plan → POST /study-plan/generate w/ spinner + toast); day accordion cards (default expanded: today + first incomplete day; CalendarCheck violet when today, Today/N-tasks badges, M/N done, rotating ChevronDown); task rows with border-l-4 priority strip (red/amber/emerald-400), round Checkbox with optimistic PATCH /study-plan/tasks/{id}/status {status} + revert + toast.error on failure, line-through slate-400 titles, subject badge, type badge with per-type icon (study/practice/test/revision), Clock duration; EmptyState (CalendarCheck) with Generate Plan action.
+- profile.tsx — ProfileView(): header card w/ 96px violet→cyan gradient initials avatar, name/email, department/Semester/ID(mono) badges; underline-style shadcn Tabs (Profile/Academic/Preferences/Notifications/Account): Profile (name PUT + refreshUser + toast), Academic (department + Semester 1-8 select + disabled University "Not configured" → PUT + refreshUser + toast), Preferences (Switch rows: Dark Mode disabled+Coming Soon, Exam Reminders, Auto-submit, Sound Effects), Notifications (4 checkbox rows + toast on change), Account (Change Password Dialog w/ validation → toast "Password updated (demo)", red Danger Zone w/ AlertDialog confirm → toast.error disabled-in-demo); loading = Skeleton layout, GET /students/me.
+- Fetch pattern across all 4: useState + useEffect + cancelled flag, loading/error/retry via reloadTick; retry moves setLoading/setError into the event handler to satisfy the new react-hooks/set-state-in-effect rule (only performance.tsx was flagged but applied uniformly to all 4 for future-proofing).
+- bun run lint: my 4 files clean (remaining project errors are pre-existing: auth-context.tsx:37 + agentexam-extracted/ + theory-exam.tsx from a parallel agent — untouched per scope). tsc --noEmit: my 4 files clean. Dev server 200; views not yet imported by the app shell (that wiring is another task).
+
+Stage Summary:
+- Files created (4): src/views/performance.tsx, src/views/readiness.tsx, src/views/study-plan.tsx, src/views/profile.tsx — exports: PerformanceView(), ReadinessView({ onNavigate: (v: ViewId) => void }), StudyPlanView(), ProfileView().
+- Design system honored: violet-600 primary, cyan accents, white rounded-xl cards w/ border-slate-200 + shadow-xs, animate-fade-in-up + space-y-6 roots with ViewHeader, mobile-first grids (1-col → 2/4-col), ae-scroll for long lists, no indigo/blue.
+- All API interactions verified against live endpoints (task status PATCH round-trip tested and reverted); PUT students/me → refreshUser() keeps the app header in sync.
+- Next agent note: wire these into the app shell via <PerformanceView/>, <ReadinessView onNavigate={setView}/>, <StudyPlanView/>, <ProfileView/>; readiness needs onNavigate to switch to the exam view; sonner Toaster is already mounted in layout.tsx.
+
+---
+Task ID: 7
+Agent: frontend-styling-expert
+Task: Build the 3 interactive exam views — theory-exam.tsx, practical-exam.tsx, ai-viva.tsx — porting the original React pages (TheoryExam.jsx, PracticalExam.jsx, AIViva.jsx) onto the Next.js 16 + shadcn/ui stack, coded exactly against src/lib/types.ts, api-client.ts, helpers.ts, bits.tsx.
+
+Work Log:
+- Read worklog + all contract files + the 3 original JSX pages + the live backend routes (exams create/start/answers/submit, practical start/submit, viva start/answers/submit) to lock the exact request/response shapes before writing UI.
+- Verified live contracts with curl/python (login → subjects → practical): confirmed snake_case bodies, ExamResult.question_results carries option IDs (letters derived client-side from the start-response questions), practical status/score derivation, viva question payload.
+- Created src/views/theory-exam.tsx — TheoryExamView({ onNavigate }) with setup → exam → results phases: max-w-xl setup card (BookOpen tile, 4 Selects in 2-col grid, Zap Start button with creating state); sticky exam header (question badge, total-marks badge, formatClock countdown pill — amber <5min, red + .timer-danger <1min, red Submit); MCQ option cards (A/B/C/D circles, violet selected), SHORT (rows 4) / LONG (rows 10, min-h-48) textareas; Previous / Mark-for-Review / Next-or-Submit nav; desktop-only w-64 sticky palette (5-col grid, current/marked/answered/unvisited states + legend + Progress) with mobile compact progress bar instead; AlertDialog submit confirm ("answered X of Y, ~30s AI evaluation"); full-screen violet-gradient evaluation overlay (animated Loader2 + 3 timed progress steps); timer-expiry auto-submit via refs (submitRef/timeUpRef/submittingRef — no stale closures); fire-and-forget autosave (MCQ instant PUT selected_option_id, text 800ms debounce PUT answer_text, pendingRef flushed on question-switch/unmount/submit); results phase (CheckCircle2, ProgressCircle 140px, obtained/total + grade badge, AI Feedback AICard + weak-area chips, Question Breakdown with green/amber/red left borders, MCQ your-vs-correct option letters + explanation, subjective answer + AI feedback blocks, Take Another Test / View Performance).
+- Created src/views/practical-exam.tsx — PracticalExamView(): subject pill tabs ("All Experiments" + derived subjects), sm:2/xl:3 experiment card grid (FlaskConical cyan tile, status badge completed·score / in_progress / not_started, subject + marks + ScorePill badges, chevron hint, hover lift); detail view with back button + ViewHeader(title, subject · marks, status badge), 2-col grid: Experiment Briefing (description, 🎯 objective, 📋 instructions whitespace-pre-line, expected output mono block) + Your Submission (mono Textarea rows 16, line/char count, Submit & Evaluate); submit flow POST /practical/start → POST submit with animated "AI is reviewing your submission…" panel (ping spinner + typing dots, up-to-20s note); result AICard (ProgressCircle percentage, marks, feedback, suggestions, Attempt Another Experiment → grid + list refresh); empty states + LoadingCard/ErrorCard.
+- Created src/views/ai-viva.tsx — AIVivaView() with intro → active → evaluation phases: intro card (Mic tile violet-100 + ai-glow, subject Select, Sparkles Start Viva Session, numbered 3-step "How it works" box); active chat max-w-3xl full-height card (Bot header + Question N of M + Progress + End & Evaluate which turns violet + ai-glow when done; ae-scroll message list with Bot/User avatars, white-border AI bubbles, violet-600 user bubbles, per-answer score badge emerald ≥70% / amber <70% + feedback, 3 bouncing .typing-dot violet dots while AI grades, auto-scroll ref); auto-resizing Textarea (manual 1→6 row height, Enter send / Shift+Enter newline, locked while waiting or done); flow: welcome msg → 1s → Q1 → answer → PUT graded eval msg → 1.2s → next Q / closing message; evaluation screen ("Viva Completed! 🎉" + ProgressCircle 140px computed from collected evals, ✅ Strong Answers / 📈 Areas to Improve 2-col cards, per-question colored score bars via getScoreBarColor, AICard with submit-response improvement suggestions, Take Another Viva reset).
+- Style rules honored: light slate/violet-600 (#7C3AED)/cyan/AI-purple palette (no indigo/blue), white rounded-xl shadow-xs cards, animate-fade-in-up roots starting with ViewHeader (exam/viva-active phases use their sticky exam/chat headers as the phase header per UX spec), mobile-first responsive, strict TypeScript with zero `any`, sonner toasts for all error/success paths.
+- Verified: bunx tsc --noEmit → zero errors in src/views/** (fixed one self-shadowing isAnswered var caught by tsc); eslint on the 3 files → 0 problems; full `bun run lint` shows only the 3 pre-existing errors (agentexam-extracted/ ×2, src/lib/auth-context.tsx) untouched per instructions; dev server still healthy (GET / 200); ran an end-to-end API smoke test replicating the exact view call sequence (create→start→MCQ/text autosave→submit→ExamResult shape) — all shapes matched.
+
+Stage Summary:
+- Files created (3): src/views/theory-exam.tsx, src/views/practical-exam.tsx, src/views/ai-viva.tsx — no other files touched.
+- All three views are self-contained client components ready to be wired into the app shell: TheoryExamView takes onNavigate(ViewId) (uses 'performance'); PracticalExamView and AIVivaView take no props.
+- Demo account note: smoke test left one extra evaluated theory test (0/9, CS501 AI, EASY 5q) in history.
+- Next agent note: import these from the page shell via ViewId state ('exam' | 'practical' | 'viva'); the sticky exam header assumes a scrollable page container (sticky top-0); chat height uses calc(100dvh-10rem) — tune if the app shell chrome is taller.
+
+---
+Task ID: 5, 9, 10
+Agent: main (Z.ai Code)
+Task: App shell + auth views, page.tsx wiring, integration, lint fixes, end-to-end browser verification
+
+Work Log:
+- Built app shell: src/components/app/{sidebar,header,bits}.tsx — 260px fixed sidebar with 3 nav sections + user footer, sticky header with per-view title/subtitle, shared UI kit (ViewHeader, StatCard, AIBadge, AICard, ProgressCircle, SectionCard, EmptyState, LoadingCard, ErrorCard, ScorePill, ImportanceBadge).
+- Built auth views: src/views/{auth-layout,login,signup,forgot-password}.tsx — split-screen layout (violet-950→violet-700→cyan gradient promo), demo-account autofill chip on login, 3-step signup wizard, decorative forgot-password flow.
+- Created src/lib/auth-context.tsx (AuthProvider/useAuth: login/register/logout/refreshUser, localStorage token).
+- Rewrote src/app/page.tsx: AuthProvider → AuthGate → AppShell (view switching via ViewId state, mobile drawer, sticky footer with disclaimer).
+- Design tokens: globals.css — violet primary (oklch 0.541 0.247 293), slate-50 bg, custom animations (fade-in-up, stagger, ai-glow, timer-danger, typing-dot), thin scrollbars.
+- Fixed bugs found during verification: lowercase <icon> JSX tag in bits.tsx AICard (console error), setState-in-effect lint errors (page.tsx effect removed, auth-context restructured), eslint ignores for agentexam-extracted/.
+- Re-seeded DB for curated demo state after testing (5-subject data, 5-test history, BFS practical convention fix questionIds=[bfsExperimentId]).
+- Agent Browser E2E verified: login (demo autofill), signup (new user → dashboard), all 11 views render with live data, theory exam FULL flow (setup → MCQ+subjective answers with autosave → submit → real AI evaluation 53% with per-question feedback), practical FULL flow (code submit → AI review 70% 7/10 with improvement suggestions), viva FULL flow (chat → AI grading per answer → 100% evaluation screen), study plan task toggle persisted via PATCH, materials file upload (Analyzed status), mobile hamburger drawer, footer positioning, clean console.
+- API smoke test: all 10 GET endpoints → 200; exam create/start → 200 with 3 questions.
+
+Stage Summary:
+- Project COMPLETE and browser-verified. Login: demo@agentexam.ai / demo123.
+- 27 API routes + 11 views + 3 auth views, all integrated via single-page shell at /.
+- AI features (question evaluation, viva grading, practical code review, improvement suggestions) run through z-ai-web-dev-sdk server-side with deterministic fallbacks on 429/errors.
+- Console clean, lint clean, no hydration errors, responsive + sticky footer verified.

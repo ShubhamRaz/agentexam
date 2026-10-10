@@ -1,0 +1,1151 @@
+import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { shuffle, round2 } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+const DIFFICULTIES = ['EASY', 'MEDIUM', 'HARD', 'MIXED']
+const EXAM_TYPES = ['MCQ', 'SHORT_ANSWER', 'LONG_ANSWER']
+
+export async function POST(req: NextRequest) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  let body: {
+    subject_id?: string
+    difficulty?: string
+    question_count?: number
+    duration_minutes?: number
+  }
+  try {
+    body = (await req.json()) as typeof body
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const subjectId = body.subject_id || ''
+  const difficulty = (body.difficulty || 'MEDIUM').toUpperCase()
+  const questionCount = Number(body.question_count ?? 10)
+  const durationMinutes = Number(body.duration_minutes ?? 30)
+
+  if (!subjectId) return Response.json({ error: 'subject_id is required' }, { status: 400 })
+  if (!DIFFICULTIES.includes(difficulty)) {
+    return Response.json({ error: 'difficulty must be EASY, MEDIUM, HARD or MIXED' }, { status: 400 })
+  }
+  if (!Number.isFinite(questionCount) || questionCount < 1) {
+    return Response.json({ error: 'question_count must be a positive number' }, { status: 400 })
+  }
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 1) {
+    return Response.json({ error: 'duration_minutes must be a positive number' }, { status: 400 })
+  }
+
+  const subject = await db.subject.findUnique({ where: { id: subjectId } })
+  if (!subject) return Response.json({ error: 'Subject not found' }, { status: 404 })
+
+  const questions = await db.question.findMany({
+    where: {
+      subjectId,
+      status: 'ACTIVE',
+      questionType: { in: EXAM_TYPES },
+    },
+    select: { id: true, marks: true, difficultyLevel: true },
+  })
+
+  if (questions.length === 0) {
+    return Response.json(
+      { error: 'No active questions available for this subject' },
+      { status: 400 }
+    )
+  }
+
+  // prefer matching difficulty, fall back to the rest when not enough
+  let pool
+  if (difficulty === 'MIXED') {
+    pool = shuffle(questions)
+  } else {
+    const preferred = shuffle(questions.filter(q => q.difficultyLevel === difficulty))
+    const rest = shuffle(questions.filter(q => q.difficultyLevel !== difficulty))
+    pool = [...preferred, ...rest]
+  }
+
+  const selected = pool.slice(0, Math.floor(questionCount))
+  const totalMarks = round2(selected.reduce((sum, q) => sum + q.marks, 0))
+
+  const test = await db.mockTest.create({
+    data: {
+      studentId: user.id,
+      subjectId: subject.id,
+      testType: 'THEORY',
+      difficultyLevel: difficulty,
+      totalMarks,
+      durationMinutes: Math.floor(durationMinutes),
+      status: 'DRAFT',
+      questionIds: JSON.stringify(selected.map(q => q.id)),
+    },
+  })
+
+  return Response.json(
+    { id: test.id, total_marks: totalMarks, question_count: selected.length },
+    { status: 201 }
+  )
+}
+import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { evaluateSubjectiveAnswer, generateImprovementSuggestions } from '@/lib/ai'
+import type { ExamResult, QuestionResult } from '@/lib/types'
+import { round2 } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+interface Q {
+  id: string
+  questionType: string
+  questionText: string
+  marks: number
+  correctAnswer: string | null
+  explanation: string | null
+  topicName: string | null
+}
+
+interface Evaluation {
+  q: Q
+  answerText: string | null
+  selectedOptionId: string | null
+  marksObtained: number
+  feedback: string
+}
+
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const { id } = await ctx.params
+  const test = await db.mockTest.findUnique({
+    where: { id },
+    include: { answers: true },
+  })
+  if (!test || test.studentId !== user.id) {
+    return Response.json({ error: 'Test not found' }, { status: 404 })
+  }
+  if (test.testType !== 'THEORY') {
+    return Response.json({ error: 'Not a theory exam' }, { status: 400 })
+  }
+  if (test.status === 'SUBMITTED' || test.status === 'EVALUATED') {
+    return Response.json({ error: 'This test has already been submitted' }, { status: 400 })
+  }
+
+  const subject = await db.subject.findUnique({ where: { id: test.subjectId } })
+  const subjectName = subject?.name ?? 'Unknown'
+  const difficulty = test.difficultyLevel
+
+  // 1) mark submitted
+  await db.mockTest.update({
+    where: { id: test.id },
+    data: { status: 'SUBMITTED', submittedAt: new Date() },
+  })
+
+  // 2) fetch questions in stored order (topic is a plain FK — join manually)
+  let questionIds: string[] = []
+  try {
+    questionIds = JSON.parse(test.questionIds) as string[]
+  } catch {
+    questionIds = []
+  }
+  const found = await db.question.findMany({
+    where: { id: { in: questionIds } },
+  })
+  const topicIds = Array.from(
+    new Set(found.map(q => q.topicId).filter(tid => !!tid))
+  ) as string[]
+  const topics = topicIds.length
+    ? await db.topic.findMany({ where: { id: { in: topicIds } } })
+    : []
+  const topicById = new Map(topics.map(t => [t.id, t]))
+  const byId = new Map(found.map(q => [q.id, q]))
+  const questions: Q[] = questionIds
+    .map(qid => byId.get(qid))
+    .filter(q => !!q)
+    .map(q => ({
+      id: q!.id,
+      questionType: q!.questionType,
+      questionText: q!.questionText,
+      marks: q!.marks,
+      correctAnswer: q!.correctAnswer,
+      explanation: q!.explanation,
+      topicName: topicById.get(q!.topicId ?? '')?.name ?? null,
+    }))
+
+  const answerByQuestion = new Map(test.answers.map(a => [a.questionId, a]))
+
+  // 3) evaluate every question (subjective answers in parallel)
+  const evaluations: Evaluation[] = await Promise.all(
+    questions.map(async q => {
+      const existing = answerByQuestion.get(q.id)
+      const answerText = existing?.answerText ?? null
+      const selectedOptionId = existing?.selectedOptionId ?? null
+
+      if (q.questionType === 'MCQ') {
+        const isCorrect = !!selectedOptionId && selectedOptionId === q.correctAnswer
+        return {
+          q,
+          answerText,
+          selectedOptionId,
+          marksObtained: isCorrect ? q.marks : 0,
+          feedback: isCorrect
+            ? 'Correct answer.'
+            : `Incorrect — the correct option is (${q.correctAnswer ?? '?'}). ${q.explanation ?? ''}`.trim(),
+        }
+      }
+
+      if (answerText && answerText.trim()) {
+        const ev = await evaluateSubjectiveAnswer(q.questionText, answerText, q.marks, {
+          subject: subjectName,
+          difficulty,
+        })
+        return {
+          q,
+          answerText,
+          selectedOptionId,
+          marksObtained: round2(ev.score),
+          feedback: ev.feedback,
+        }
+      }
+
+      return { q, answerText, selectedOptionId, marksObtained: 0, feedback: 'Unattempted.' }
+    })
+  )
+
+  // 4) persist marks + feedback on answers
+  for (const e of evaluations) {
+    const existing = answerByQuestion.get(e.q.id)
+    if (existing) {
+      await db.answer.update({
+        where: { id: existing.id },
+        data: { marksObtained: e.marksObtained, feedback: e.feedback },
+      })
+    } else {
+      await db.answer.create({
+        data: {
+          questionId: e.q.id,
+          studentId: user.id,
+          testId: test.id,
+          answerText: e.answerText,
+          selectedOptionId: e.selectedOptionId,
+          marksObtained: e.marksObtained,
+          feedback: e.feedback,
+        },
+      })
+    }
+  }
+
+  // 5) totals
+  const obtained = round2(evaluations.reduce((sum, e) => sum + e.marksObtained, 0))
+  const total = round2(questions.reduce((sum, q) => sum + q.marks, 0))
+  const percentage = total > 0 ? Math.round((obtained / total) * 100) : 0
+  const grade = percentage >= 90 ? 'A' : percentage >= 80 ? 'B' : percentage >= 70 ? 'C' : percentage >= 60 ? 'D' : 'F'
+  const passStatus = percentage >= 40
+
+  // 6) weak / strong areas by topic
+  const weakAreas: string[] = []
+  const strongAreas: string[] = []
+  const seenWeak = new Set<string>()
+  const seenStrong = new Set<string>()
+  for (const e of evaluations) {
+    if (e.q.marks <= 0) continue
+    const ratio = e.marksObtained / e.q.marks
+    const label = e.q.topicName ?? e.q.questionText.slice(0, 40)
+    if (ratio < 0.4 && !seenWeak.has(label)) {
+      weakAreas.push(label)
+      seenWeak.add(label)
+    } else if (ratio >= 0.8 && !seenStrong.has(label)) {
+      strongAreas.push(label)
+      seenStrong.add(label)
+    }
+  }
+
+  // 7) AI improvement suggestions
+  const improvementSuggestions = await generateImprovementSuggestions(
+    subjectName,
+    percentage,
+    weakAreas
+  )
+
+  // 8) upsert Result (replace any stale row)
+  await db.result.deleteMany({ where: { testId: test.id } })
+  await db.result.create({
+    data: {
+      testId: test.id,
+      studentId: user.id,
+      totalMarks: total,
+      obtainedMarks: obtained,
+      percentage,
+      grade,
+      passStatus,
+      analytics: JSON.stringify({
+        improvement_suggestions: improvementSuggestions,
+        weak_areas: weakAreas,
+        strong_areas: strongAreas,
+      }),
+    },
+  })
+
+  // 9) mark evaluated
+  await db.mockTest.update({
+    where: { id: test.id },
+    data: { status: 'EVALUATED', totalMarks: total },
+  })
+
+  // 10) build response — correct answers ARE visible after submission
+  const question_results: QuestionResult[] = evaluations.map(e => ({
+    question_id: e.q.id,
+    question_text: e.q.questionText,
+    question_type: e.q.questionType as QuestionResult['question_type'],
+    marks: e.q.marks,
+    student_answer: e.answerText,
+    selected_option_id: e.selectedOptionId,
+    correct_option_id: e.q.questionType === 'MCQ' ? e.q.correctAnswer : null,
+    marks_obtained: e.marksObtained,
+    feedback: e.feedback,
+    explanation: e.q.explanation,
+  }))
+
+  const payload: ExamResult = {
+    test_id: test.id,
+    subject: subjectName,
+    test_type: test.testType,
+    percentage,
+    obtained_marks: obtained,
+    total_marks: total,
+    grade,
+    analytics: {
+      improvement_suggestions: improvementSuggestions,
+      weak_areas: weakAreas,
+      strong_areas: strongAreas,
+    },
+    question_results,
+  }
+
+  return Response.json(payload)
+}
+import { NextRequest } from 'next/server'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { getOrCreateStudyPlan, mapPlanToData } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(req: NextRequest) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const plan = await getOrCreateStudyPlan(user.id)
+  return Response.json(mapPlanToData(plan))
+}
+import { NextRequest } from 'next/server'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { generateStudyPlan, mapPlanToData } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+/** Force-regenerate the study plan (archives the old one) and return it. */
+export async function POST(req: NextRequest) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const plan = await generateStudyPlan(user.id)
+  return Response.json(mapPlanToData(plan))
+}
+import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { evaluateVivaAnswer } from '@/lib/ai'
+import { round2 } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+export async function PUT(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string; qid: string }> }
+) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const { id, qid } = await ctx.params
+  const test = await db.mockTest.findUnique({
+    where: { id },
+    include: { answers: true },
+  })
+  if (!test || test.studentId !== user.id) {
+    return Response.json({ error: 'Viva session not found' }, { status: 404 })
+  }
+  if (test.testType !== 'VIVA') {
+    return Response.json({ error: 'Not a viva session' }, { status: 400 })
+  }
+  if (test.status === 'SUBMITTED' || test.status === 'EVALUATED') {
+    return Response.json({ error: 'This viva session has already been submitted' }, { status: 400 })
+  }
+
+  let questionIds: string[] = []
+  try {
+    questionIds = JSON.parse(test.questionIds) as string[]
+  } catch {
+    questionIds = []
+  }
+  if (!questionIds.includes(qid)) {
+    return Response.json({ error: 'Question is not part of this viva session' }, { status: 400 })
+  }
+
+  const question = await db.question.findUnique({
+    where: { id: qid },
+    include: { subject: true },
+  })
+  if (!question) {
+    return Response.json({ error: 'Question not found' }, { status: 404 })
+  }
+
+  let body: { answer_text?: string }
+  try {
+    body = (await req.json()) as { answer_text?: string }
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+  const answerText = body.answer_text || ''
+
+  const evaluation = await evaluateVivaAnswer(
+    question.questionText,
+    answerText,
+    question.marks,
+    question.subject.name
+  )
+  const marksObtained = round2(evaluation.marks_obtained)
+
+  const existing = test.answers.find(a => a.questionId === qid)
+  if (existing) {
+    await db.answer.update({
+      where: { id: existing.id },
+      data: {
+        answerText,
+        marksObtained,
+        feedback: evaluation.feedback,
+        answeredAt: new Date(),
+      },
+    })
+  } else {
+    await db.answer.create({
+      data: {
+        questionId: qid,
+        studentId: user.id,
+        testId: test.id,
+        answerText,
+        marksObtained,
+        feedback: evaluation.feedback,
+      },
+    })
+  }
+
+  return Response.json({
+    marks_obtained: marksObtained,
+    max_marks: question.marks,
+    feedback: evaluation.feedback,
+  })
+}
+import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { generateImprovementSuggestions } from '@/lib/ai'
+import { round2 } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const { id } = await ctx.params
+  const test = await db.mockTest.findUnique({
+    where: { id },
+    include: { answers: true },
+  })
+  if (!test || test.studentId !== user.id) {
+    return Response.json({ error: 'Viva session not found' }, { status: 404 })
+  }
+  if (test.testType !== 'VIVA') {
+    return Response.json({ error: 'Not a viva session' }, { status: 400 })
+  }
+  if (test.status === 'EVALUATED') {
+    return Response.json({ error: 'This viva session has already been submitted' }, { status: 400 })
+  }
+  const subject = await db.subject.findUnique({ where: { id: test.subjectId } })
+  const subjectName = subject?.name ?? 'Unknown'
+
+  let questionIds: string[] = []
+  try {
+    questionIds = JSON.parse(test.questionIds) as string[]
+  } catch {
+    questionIds = []
+  }
+  const questions = await db.question.findMany({ where: { id: { in: questionIds } } })
+  const byId = new Map(questions.map(q => [q.id, q]))
+  const answerByQuestion = new Map(test.answers.map(a => [a.questionId, a]))
+
+  const total = round2(questions.reduce((sum, q) => sum + q.marks, 0))
+  const obtained = round2(
+    questions.reduce((sum, q) => sum + (answerByQuestion.get(q.id)?.marksObtained ?? 0), 0)
+  )
+  const percentage = total > 0 ? Math.round((obtained / total) * 100) : 0
+
+  // weak questions: score below 50%
+  const weakTexts: string[] = []
+  for (const q of questions) {
+    const ans = answerByQuestion.get(q.id)
+    const ratio = q.marks > 0 ? (ans?.marksObtained ?? 0) / q.marks : 0
+    if (ratio < 0.5) weakTexts.push(q.questionText)
+  }
+
+  const suggestions = await generateImprovementSuggestions(subjectName, percentage, weakTexts)
+
+  await db.result.deleteMany({ where: { testId: test.id } })
+  await db.result.create({
+    data: {
+      testId: test.id,
+      studentId: user.id,
+      totalMarks: total,
+      obtainedMarks: obtained,
+      percentage,
+      grade:
+        percentage >= 90 ? 'A' : percentage >= 80 ? 'B' : percentage >= 70 ? 'C' : percentage >= 60 ? 'D' : 'F',
+      passStatus: percentage >= 40,
+      analytics: JSON.stringify({ improvement_suggestions: suggestions }),
+    },
+  })
+
+  await db.mockTest.update({
+    where: { id: test.id },
+    data: {
+      status: 'EVALUATED',
+      submittedAt: new Date(),
+      totalMarks: total,
+    },
+  })
+
+  return Response.json({
+    percentage,
+    obtained,
+    total,
+    analytics: { improvement_suggestions: suggestions },
+  })
+}
+import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { shuffle, round2 } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+export async function POST(req: NextRequest) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  let body: { subject_id?: string }
+  try {
+    body = (await req.json()) as { subject_id?: string }
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const subjectId = body.subject_id || ''
+  if (!subjectId) {
+    return Response.json({ error: 'subject_id is required' }, { status: 400 })
+  }
+
+  const subject = await db.subject.findUnique({ where: { id: subjectId } })
+  if (!subject) return Response.json({ error: 'Subject not found' }, { status: 404 })
+
+  const vivaQuestions = await db.question.findMany({
+    where: { subjectId, questionType: 'VIVA', status: 'ACTIVE' },
+    select: { id: true, questionText: true, marks: true },
+  })
+
+  if (vivaQuestions.length === 0) {
+    return Response.json(
+      { error: 'No viva questions available for this subject' },
+      { status: 400 }
+    )
+  }
+
+  // pick up to 5 random viva questions
+  const selected = shuffle(vivaQuestions).slice(0, 5)
+  const totalMarks = round2(selected.reduce((sum, q) => sum + q.marks, 0))
+
+  const now = new Date()
+  const test = await db.mockTest.create({
+    data: {
+      studentId: user.id,
+      subjectId: subject.id,
+      testType: 'VIVA',
+      difficultyLevel: 'MEDIUM',
+      totalMarks,
+      durationMinutes: 15,
+      status: 'IN_PROGRESS',
+      questionIds: JSON.stringify(selected.map(q => q.id)),
+      startedAt: now,
+      expiresAt: new Date(now.getTime() + 15 * 60 * 1000),
+    },
+  })
+
+  return Response.json(
+    {
+      id: test.id,
+      questions: selected.map(q => ({
+        id: q.id,
+        question_text: q.questionText,
+        marks: q.marks,
+      })),
+    },
+    { status: 201 }
+  )
+}
+import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { evaluatePracticalSubmission } from '@/lib/ai'
+import { round2 } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const { id } = await ctx.params
+  const test = await db.mockTest.findUnique({ where: { id } })
+  if (!test || test.studentId !== user.id) {
+    return Response.json({ error: 'Test not found' }, { status: 404 })
+  }
+  if (test.testType !== 'PRACTICAL') {
+    return Response.json({ error: 'Not a practical test' }, { status: 400 })
+  }
+  if (test.status === 'EVALUATED') {
+    return Response.json({ error: 'This practical has already been submitted' }, { status: 400 })
+  }
+
+  let body: { code?: string }
+  try {
+    body = (await req.json()) as { code?: string }
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+  const code = body.code || ''
+  if (!code.trim()) {
+    return Response.json({ error: 'Code submission is required' }, { status: 400 })
+  }
+
+  // experiment id is stored as the sole entry of test.questionIds
+  let experimentId: string | null = null
+  try {
+    const ids = JSON.parse(test.questionIds) as string[]
+    experimentId = ids[0] ?? null
+  } catch {
+    experimentId = null
+  }
+  if (!experimentId) {
+    return Response.json({ error: 'Practical test has no experiment attached' }, { status: 400 })
+  }
+  const experiment = await db.experiment.findUnique({ where: { id: experimentId } })
+  if (!experiment) {
+    return Response.json({ error: 'Experiment not found' }, { status: 404 })
+  }
+
+  const evaluation = await evaluatePracticalSubmission(
+    experiment.title,
+    experiment.description,
+    experiment.expectedOutput,
+    code,
+    experiment.marks
+  )
+
+  const score = round2(evaluation.score)
+  const percentage = Math.round(evaluation.percentage)
+
+  // mark test evaluated
+  await db.mockTest.update({
+    where: { id: test.id },
+    data: { status: 'EVALUATED', submittedAt: new Date() },
+  })
+
+  // Note: no Answer row is created — experiment ids are not Question ids
+  // (FK constraint), so the Result is written directly.
+  await db.result.deleteMany({ where: { testId: test.id } })
+  await db.result.create({
+    data: {
+      testId: test.id,
+      studentId: user.id,
+      totalMarks: experiment.marks,
+      obtainedMarks: score,
+      percentage,
+      grade: percentage >= 90 ? 'A' : percentage >= 80 ? 'B' : percentage >= 70 ? 'C' : percentage >= 60 ? 'D' : 'F',
+      passStatus: percentage >= 40,
+      analytics: JSON.stringify({
+        improvement_suggestions: evaluation.suggestions,
+      }),
+    },
+  })
+
+  return Response.json({
+    score,
+    percentage,
+    feedback: evaluation.feedback,
+    suggestions: evaluation.suggestions,
+  })
+}
+import { NextRequest } from 'next/server'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import {
+  getEvaluatedTests,
+  getAnswerRows,
+  overallAccuracy,
+  computeTopicPerformance,
+  round1,
+  WEAK_TOPIC_RECOMMENDATION,
+} from '@/app/api/lib/compute'
+import type { PerformanceData } from '@/lib/types'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(req: NextRequest) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const tests = await getEvaluatedTests(user.id)
+  const answerRows = await getAnswerRows(user.id)
+
+  const percentages = tests.map(t => t.result.percentage)
+  const totalTests = tests.length
+  const averageScore = totalTests > 0 ? round1(percentages.reduce((a, b) => a + b, 0) / totalTests) : 0
+  const improvement =
+    totalTests >= 2 ? round1(percentages[totalTests - 1] - percentages[0]) : 0
+  const accuracy = overallAccuracy(answerRows)
+  const studyHours = round1(totalTests * 0.75)
+
+  const scoreTrend = tests.map(t => ({
+    date: t.result.createdAt.toISOString().slice(0, 10),
+    score: Math.round(t.result.percentage),
+  }))
+  const accuracyTrend = tests.map(t => ({
+    date: t.result.createdAt.toISOString().slice(0, 10),
+    accuracy: Math.round(t.result.percentage), // percentage as proxy
+  }))
+
+  // subject performance: average pct + obtained/total ratio
+  const subjectMap = new Map<
+    string,
+    { subject: string; pctTotal: number; count: number; obtained: number; total: number }
+  >()
+  for (const t of tests) {
+    const cur =
+      subjectMap.get(t.subjectId) ??
+      { subject: t.subject, pctTotal: 0, count: 0, obtained: 0, total: 0 }
+    cur.pctTotal += t.result.percentage
+    cur.count += 1
+    cur.obtained += t.result.obtainedMarks
+    cur.total += t.result.totalMarks
+    subjectMap.set(t.subjectId, cur)
+  }
+  const subjectPerformance = Array.from(subjectMap.values()).map(v => ({
+    subject: v.subject,
+    score: round1(v.pctTotal / v.count),
+    accuracy:
+      v.total > 0 ? round1((v.obtained / v.total) * 100) : round1(v.pctTotal / v.count),
+  }))
+
+  const topicRows = computeTopicPerformance(answerRows)
+  const topicPerformance = topicRows.map(t => ({
+    topic: t.topic,
+    subject: t.subject,
+    score: t.score,
+    status: t.status,
+  }))
+  const weakTopics = topicRows
+    .filter(t => t.status === 'weak')
+    .sort((a, b) => a.score - b.score)
+    .map(t => ({
+      topic: t.topic,
+      subject: t.subject,
+      score: t.score,
+      recommendation: WEAK_TOPIC_RECOMMENDATION,
+    }))
+
+  const payload: PerformanceData = {
+    overall: { totalTests, averageScore, improvement, accuracy, studyHours },
+    scoreTrend,
+    accuracyTrend,
+    subjectPerformance,
+    topicPerformance,
+    weakTopics,
+  }
+  return Response.json(payload)
+}
+import { NextRequest } from 'next/server'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import {
+  getEvaluatedTests,
+  getAnswerRows,
+  overallAccuracy,
+  computeTopicPerformance,
+  type TopicRow,
+} from '@/app/api/lib/compute'
+import type { ReadinessData } from '@/lib/types'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(req: NextRequest) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const tests = await getEvaluatedTests(user.id)
+  const answerRows = await getAnswerRows(user.id)
+  const topicRows = computeTopicPerformance(answerRows)
+
+  const totalTests = tests.length
+  const overallScore =
+    totalTests > 0
+      ? Math.round(tests.reduce((sum, t) => sum + t.result.percentage, 0) / totalTests)
+      : 0
+
+  const status: ReadinessData['status'] =
+    totalTests < 5
+      ? 'INSUFFICIENT_DATA'
+      : overallScore >= 70
+        ? 'HIGH'
+        : overallScore >= 40
+          ? 'MODERATE'
+          : 'LOW'
+
+  const estimatedStudyHoursNeeded = Math.round((100 - overallScore) * 2.5)
+
+  const topicsAttempted = new Set(
+    answerRows.filter(r => r.topicId).map(r => r.topicId)
+  ).size
+
+  // per-subject aggregates (from tests + topic analytics)
+  const testAgg = new Map<string, { subject: string; pctTotal: number; count: number }>()
+  for (const t of tests) {
+    const cur = testAgg.get(t.subjectId) ?? { subject: t.subject, pctTotal: 0, count: 0 }
+    cur.pctTotal += t.result.percentage
+    cur.count += 1
+    testAgg.set(t.subjectId, cur)
+  }
+  const topicsBySubject = new Map<string, TopicRow[]>()
+  for (const tr of topicRows) {
+    const list = topicsBySubject.get(tr.subjectId) ?? []
+    list.push(tr)
+    topicsBySubject.set(tr.subjectId, list)
+  }
+  const subjectIds = new Set<string>([...testAgg.keys(), ...topicsBySubject.keys()])
+  const subjectReadiness = Array.from(subjectIds).map(sid => {
+    const agg = testAgg.get(sid)
+    const score = agg ? Math.round(agg.pctTotal / agg.count) : 0
+    const topics = topicsBySubject.get(sid) ?? []
+    return {
+      subject: agg?.subject ?? topics[0]?.subject ?? 'Unknown',
+      score,
+      status: (score >= 70 ? 'on_track' : score >= 40 ? 'needs_attention' : 'at_risk') as
+        | 'on_track'
+        | 'needs_attention'
+        | 'at_risk',
+      topicsReady: topics.filter(t => t.score >= 60).length,
+      totalTopics: topics.length,
+    }
+  })
+
+  const weakRows = topicRows.filter(t => t.status === 'weak').sort((a, b) => a.score - b.score)
+  const riskAreas = weakRows.map(w => ({
+    topic: w.topic,
+    subject: w.subject,
+    risk: (w.score < 35 ? 'high' : 'medium') as 'high' | 'medium',
+    reason: `Low accuracy (${w.score}%) — frequently tested topic`,
+  }))
+
+  const recommendations: ReadinessData['recommendations'] = []
+  for (const r of riskAreas.slice(0, 3)) {
+    recommendations.push({
+      action: `Revise ${r.topic} (${r.subject}) unit notes and solve 10 practice questions`,
+      estimatedTime: '45m',
+      priority: r.risk === 'high' ? 'high' : 'medium',
+    })
+  }
+  const focusSubject =
+    riskAreas[0]?.subject ?? subjectReadiness[0]?.subject ?? 'your weakest subject'
+  recommendations.push({
+    action: `Attempt a medium-difficulty mock test on ${focusSubject}`,
+    estimatedTime: '60m',
+    priority: 'medium',
+  })
+  recommendations.push({
+    action: 'Take an AI viva session to strengthen oral answers',
+    estimatedTime: '15m',
+    priority: 'low',
+  })
+  if (recommendations.length < 3) {
+    recommendations.push({
+      action: "Review your study plan and complete today's scheduled tasks",
+      estimatedTime: '45m',
+      priority: 'medium',
+    })
+  }
+
+  const payload: ReadinessData = {
+    overallScore,
+    status,
+    estimatedStudyHoursNeeded,
+    breakdown: {
+      accuracy: overallAccuracy(answerRows),
+      topicsAttempted,
+    },
+    subjectReadiness,
+    riskAreas,
+    recommendations: recommendations.slice(0, 5),
+  }
+  return Response.json(payload)
+}
+import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import {
+  getEvaluatedTests,
+  getAnswerRows,
+  computeTopicPerformance,
+  getTodayTasks,
+  round1,
+  WEAK_TOPIC_RECOMMENDATION,
+} from '@/app/api/lib/compute'
+import type { DashboardData } from '@/lib/types'
+
+export const dynamic = 'force-dynamic'
+
+const TYPE_ICONS: Record<string, string> = {
+  THEORY: '📝',
+  PRACTICAL: '🔬',
+  VIVA: '🎤',
+}
+
+export async function GET(req: NextRequest) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const evaluated = await getEvaluatedTests(user.id)
+  const answerRows = await getAnswerRows(user.id)
+  const topicRows = computeTopicPerformance(answerRows)
+
+  // ---- student block ----
+  const allTests = await db.mockTest.findMany({
+    where: { studentId: user.id },
+    orderBy: { createdAt: 'desc' },
+  })
+  const testsCompleted = evaluated.length
+  const averageScore =
+    testsCompleted > 0
+      ? round1(evaluated.reduce((sum, t) => sum + t.result.percentage, 0) / testsCompleted)
+      : 0
+  const streak = allTests.length >= 3 ? 3 : allTests.length
+  const totalStudyHours = Math.round(testsCompleted * 0.75)
+
+  // ---- readiness ----
+  const readinessScore =
+    testsCompleted > 0
+      ? Math.round(evaluated.reduce((sum, t) => sum + t.result.percentage, 0) / testsCompleted)
+      : 0
+
+  // ---- exam countdown ----
+  const examDate = user.examDate
+  const daysLeft = examDate
+    ? Math.max(0, Math.ceil((examDate.getTime() - Date.now()) / (24 * 3600 * 1000)))
+    : 0
+
+  // ---- recent tests (last 5 evaluated, newest first) ----
+  const recentTests = [...evaluated]
+    .sort((a, b) => (b.submittedAt ?? b.createdAt).getTime() - (a.submittedAt ?? a.createdAt).getTime())
+    .slice(0, 5)
+    .map(t => ({
+      type: t.testType.toLowerCase(),
+      name: `${t.subject} Mock Test`,
+      score: Math.round(t.result.percentage),
+      date: (t.submittedAt ?? t.createdAt).toISOString(),
+    }))
+
+  // ---- recent activity (last 4 tests of any type) ----
+  const activityTests = await db.mockTest.findMany({
+    where: { studentId: user.id },
+    include: { result: true },
+    orderBy: { createdAt: 'desc' },
+    take: 4,
+  })
+  const subjects = await db.subject.findMany()
+  const subjectById = new Map(subjects.map(s => [s.id, s]))
+  const recentActivity = activityTests.map(t => ({
+    id: t.id,
+    icon: TYPE_ICONS[t.testType] ?? '📝',
+    title:
+      t.testType === 'VIVA'
+        ? `${subjectById.get(t.subjectId)?.name ?? 'Unknown'} Viva Session`
+        : t.testType === 'PRACTICAL'
+          ? `${subjectById.get(t.subjectId)?.name ?? 'Unknown'} Practical`
+          : `${subjectById.get(t.subjectId)?.name ?? 'Unknown'} Mock Test`,
+    time: (t.submittedAt ?? t.createdAt).toISOString(),
+    ...(t.result ? { score: Math.round(t.result.percentage) } : {}),
+  }))
+
+  // ---- today's tasks from study plan ----
+  const todayTasks = await getTodayTasks(user.id)
+
+  // ---- weak topics (top 4, worst first) ----
+  const weakTopics = topicRows
+    .filter(t => t.status === 'weak')
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 4)
+    .map(t => ({
+      topic: t.topic,
+      subject: t.subject,
+      score: t.score,
+      recommendation: WEAK_TOPIC_RECOMMENDATION,
+    }))
+
+  // ---- subject performance ----
+  const subjectMap = new Map<
+    string,
+    { subject: string; pctTotal: number; count: number; obtained: number; total: number }
+  >()
+  for (const t of evaluated) {
+    const cur =
+      subjectMap.get(t.subjectId) ??
+      { subject: t.subject, pctTotal: 0, count: 0, obtained: 0, total: 0 }
+    cur.pctTotal += t.result.percentage
+    cur.count += 1
+    cur.obtained += t.result.obtainedMarks
+    cur.total += t.result.totalMarks
+    subjectMap.set(t.subjectId, cur)
+  }
+  const subjectPerformance = Array.from(subjectMap.values()).map(v => ({
+    subject: v.subject,
+    score: round1(v.pctTotal / v.count),
+    tests: v.count,
+    accuracy: v.total > 0 ? round1((v.obtained / v.total) * 100) : 0,
+  }))
+
+  const payload: DashboardData = {
+    student: { name: user.name, streak, averageScore, testsCompleted, totalStudyHours },
+    readinessScore,
+    daysLeft,
+    examDate: examDate ? examDate.toISOString() : null,
+    recentTests,
+    recentActivity,
+    todayTasks,
+    weakTopics,
+    subjectPerformance,
+  }
+  return Response.json(payload)
+}
+import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { mapMaterial } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+const VALID_TYPES: Record<string, string> = {
+  SYLLABUS: 'SYLLABUS',
+  PYQ: 'PYQ',
+  NOTES: 'NOTES',
+  LAB_MANUAL: 'LAB_MANUAL',
+  syllabus: 'SYLLABUS',
+  pyq: 'PYQ',
+  notes: 'NOTES',
+  lab_manual: 'LAB_MANUAL',
+}
+
+export async function POST(req: NextRequest) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  let form: FormData
+  try {
+    form = await req.formData()
+  } catch {
+    return Response.json({ error: 'Expected multipart/form-data body' }, { status: 400 })
+  }
+
+  const file = form.get('file')
+  const subjectId = (form.get('subject_id') || form.get('subjectId') || '') as string
+  const materialTypeRaw = (form.get('material_type') || form.get('materialType') || 'notes') as string
+
+  if (!(file instanceof File)) {
+    return Response.json({ error: 'No file provided' }, { status: 400 })
+  }
+  if (!subjectId) {
+    return Response.json({ error: 'subject_id is required' }, { status: 400 })
+  }
+
+  const subject = await db.subject.findUnique({ where: { id: subjectId } })
+  if (!subject) {
+    return Response.json({ error: 'Subject not found' }, { status: 404 })
+  }
+
+  // read the file content (metadata is what we persist)
+  const buffer = await file.arrayBuffer()
+  const size = file.size || buffer.byteLength
+
+  const fileName = file.name || 'upload.bin'
+  const title = fileName.replace(/\.[^.]+$/, '') || fileName
+  const fileType = fileName.includes('.') ? fileName.split('.').pop()! : 'bin'
+  const mimeType = file.type || 'application/octet-stream'
+  const materialType = VALID_TYPESaterialTypeRaw] || 'NOTES'
+
+  const material = await db.material.create({
+    data: {
+      subjectId: subject.id,
+      uploadedBy: user.id,
+      materialType,
+      title,
+      fileName,
+      fileType,
+      mimeType,
+      fileSize: size,
+      processingStatus: 'PROCESSED',
+    },
+    include: { subject: true },
+  })
+
+  return Response.json(mapMaterial(material), { status: 201 })
+}
+import { NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getAuthUser, unauthorized } from '@/lib/auth'
+import { mapMaterial } from '@/app/api/lib/compute'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(req: NextRequest) {
+  const user = await getAuthUser(req)
+  if (!user) return unauthorized()
+
+  const materials = await db.material.findMany({
+    where: { uploadedBy: user.id },
+    include: { subject: true },
+    orderBy: { createdAt: 'desc' }, // newest first
+  })
+
+  return Response.json(materials.map(mapMaterial))
+}
+./exams/route.ts:4:import { shuffle, round2 } from '../../lib/compute'
+./exams/[id]/submit/route.ts:6:import { round2 } from '../../../lib/compute'
+./study-plan/me/route.ts:3:import { getOrCreateStudyPlan, mapPlanToData } from '../../lib/compute'
+./study-plan/generate/route.ts:3:import { generateStudyPlan, mapPlanToData } from '../../lib/compute'
+./viva/[id]/answers/[qid]/route.ts:5:import { round2 } from '../../../../lib/compute'
+./viva/[id]/submit/route.ts:5:import { round2 } from '../../../lib/compute'
+./viva/start/route.ts:4:import { shuffle, round2 } from '../../lib/compute'
+./practical/[id]/submit/route.ts:5:import { round2 } from '../../../lib/compute'
+./performance/me/route.ts:10:} from '../../lib/compute'
+./performance/me/readiness/route.ts:9:} from '../../../lib/compute'
+./dashboard/route.ts:11:} from '../lib/compute'
+./materials/upload/route.ts:4:import { mapMaterial } from '../../lib/compute'

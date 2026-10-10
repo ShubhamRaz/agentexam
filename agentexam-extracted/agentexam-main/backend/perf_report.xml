@@ -1,0 +1,799 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="7" skipped="0" tests="10" time="2.797" timestamp="2026-08-22T09:49:49.322445+05:30" hostname="DESKTOP-RE3LND5"><testcase classname="tests.performance.test_performance" name="test_get_my_weak_topics" time="0.208"><failure message="AttributeError: type object 'Topic' has no attribute 'subject_id'">auth_client_student = &lt;httpx.AsyncClient object at 0x000001800CCA1010&gt;
+
+    @pytest.mark.asyncio
+    async def test_get_my_weak_topics(auth_client_student):
+&gt;       response = await auth_client_student.get("/api/v1/performance/me/weak-topics")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\performance\test_performance.py:7: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\httpx\_client.py:1768: in get
+    return await self.request(
+.venv\Lib\site-packages\httpx\_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv\Lib\site-packages\httpx\_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv\Lib\site-packages\httpx\_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_transports\asgi.py:170: in handle_async_request
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\applications.py:1163: in __call__
+    await super().__call__(scope, receive, send)
+.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv\Lib\site-packages\starlette\middleware\cors.py:88: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\routing.py:670: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2734: in app
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1791: in _handle_selected
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1800: in _handle_selected
+    await original_route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1279: in handle
+    await app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:158: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\routing.py:144: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\fastapi\routing.py:706: in app
+    raw_response = await run_endpoint_function(
+.venv\Lib\site-packages\fastapi\routing.py:352: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\api\routes\performance.py:63: in get_my_weak_topics
+    return await performance_service.get_weak_topics(db, current_user.id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:68: in get_weak_topics
+    rows = await self.get_topic_accuracy_metrics(db, student_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;app.services.performance.PerformanceService object at 0x000001800C8263C0&gt;
+db = &lt;sqlalchemy.ext.asyncio.session.AsyncSession object at 0x000001800CDE1590&gt;
+student_id = UUID('b1c17f9d-9e16-4037-ba28-38ecbc162b49'), topic_id = None
+
+    async def get_topic_accuracy_metrics(self, db: AsyncSession, student_id: uuid.UUID, topic_id: uuid.UUID = None):
+        # Base query to fetch sum(marks_obtained) and sum(marks_max) for all EVALUATED tests per topic
+        stmt = (
+            select(
+                Question.topic_id,
+                Topic.name.label("topic_name"),
+&gt;               Topic.subject_id,
+                ^^^^^^^^^^^^^^^^
+                func.count(Answer.id).label("attempts"),
+                func.sum(Evaluation.marks_obtained).label("total_obtained"),
+                func.sum(Question.marks).label("total_max")
+            )
+            .join(Answer, Answer.question_id == Question.id)
+            .join(Evaluation, Evaluation.answer_id == Answer.id)
+            .join(MockTest, Answer.test_id == MockTest.id)
+            .join(Topic, Question.topic_id == Topic.id)
+            .where(
+                Answer.student_id == student_id,
+                MockTest.status == ExamStatus.EVALUATED
+            )
+        )
+E       AttributeError: type object 'Topic' has no attribute 'subject_id'
+
+app\services\performance.py:25: AttributeError</failure></testcase><testcase classname="tests.performance.test_performance" name="test_get_topic_recommended_difficulty" time="0.087"><failure message="AttributeError: type object 'Topic' has no attribute 'subject_id'">auth_client_student = &lt;httpx.AsyncClient object at 0x000001800CDE3890&gt;
+
+    @pytest.mark.asyncio
+    async def test_get_topic_recommended_difficulty(auth_client_student):
+        # Just use a random topic UUID for now, as it handles unknown topics
+        random_topic_id = str(uuid.uuid4())
+&gt;       response = await auth_client_student.get(f"/api/v1/performance/me/topics/{random_topic_id}/difficulty")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\performance\test_performance.py:20: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\httpx\_client.py:1768: in get
+    return await self.request(
+.venv\Lib\site-packages\httpx\_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv\Lib\site-packages\httpx\_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv\Lib\site-packages\httpx\_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_transports\asgi.py:170: in handle_async_request
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\applications.py:1163: in __call__
+    await super().__call__(scope, receive, send)
+.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv\Lib\site-packages\starlette\middleware\cors.py:88: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\routing.py:670: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2734: in app
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1791: in _handle_selected
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1800: in _handle_selected
+    await original_route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1279: in handle
+    await app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:158: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\routing.py:144: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\fastapi\routing.py:706: in app
+    raw_response = await run_endpoint_function(
+.venv\Lib\site-packages\fastapi\routing.py:352: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\api\routes\performance.py:73: in get_topic_recommended_difficulty
+    return await performance_service.get_recommended_difficulty(db, current_user.id, topic_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:151: in get_recommended_difficulty
+    rows = await self.get_topic_accuracy_metrics(db, student_id, topic_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;app.services.performance.PerformanceService object at 0x000001800C8263C0&gt;
+db = &lt;sqlalchemy.ext.asyncio.session.AsyncSession object at 0x000001800CFBC510&gt;
+student_id = UUID('b1c17f9d-9e16-4037-ba28-38ecbc162b49')
+topic_id = UUID('c13a244f-57e6-40d9-b72a-0ad1dd8ee492')
+
+    async def get_topic_accuracy_metrics(self, db: AsyncSession, student_id: uuid.UUID, topic_id: uuid.UUID = None):
+        # Base query to fetch sum(marks_obtained) and sum(marks_max) for all EVALUATED tests per topic
+        stmt = (
+            select(
+                Question.topic_id,
+                Topic.name.label("topic_name"),
+&gt;               Topic.subject_id,
+                ^^^^^^^^^^^^^^^^
+                func.count(Answer.id).label("attempts"),
+                func.sum(Evaluation.marks_obtained).label("total_obtained"),
+                func.sum(Question.marks).label("total_max")
+            )
+            .join(Answer, Answer.question_id == Question.id)
+            .join(Evaluation, Evaluation.answer_id == Answer.id)
+            .join(MockTest, Answer.test_id == MockTest.id)
+            .join(Topic, Question.topic_id == Topic.id)
+            .where(
+                Answer.student_id == student_id,
+                MockTest.status == ExamStatus.EVALUATED
+            )
+        )
+E       AttributeError: type object 'Topic' has no attribute 'subject_id'
+
+app\services\performance.py:25: AttributeError</failure></testcase><testcase classname="tests.performance.test_performance" name="test_performance_unauthorized" time="0.083" /><testcase classname="tests.performance.test_performance_analytics" name="test_get_my_performance_overview" time="0.087"><failure message="AttributeError: type object 'Topic' has no attribute 'subject_id'">auth_client_student = &lt;httpx.AsyncClient object at 0x000001800CFBCE90&gt;
+
+    @pytest.mark.asyncio
+    async def test_get_my_performance_overview(auth_client_student):
+&gt;       response = await auth_client_student.get("/api/v1/performance/me")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\performance\test_performance_analytics.py:6: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\httpx\_client.py:1768: in get
+    return await self.request(
+.venv\Lib\site-packages\httpx\_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv\Lib\site-packages\httpx\_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv\Lib\site-packages\httpx\_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_transports\asgi.py:170: in handle_async_request
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\applications.py:1163: in __call__
+    await super().__call__(scope, receive, send)
+.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv\Lib\site-packages\starlette\middleware\cors.py:88: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\routing.py:670: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2734: in app
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1791: in _handle_selected
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1800: in _handle_selected
+    await original_route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1279: in handle
+    await app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:158: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\routing.py:144: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\fastapi\routing.py:706: in app
+    raw_response = await run_endpoint_function(
+.venv\Lib\site-packages\fastapi\routing.py:352: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\api\routes\performance.py:36: in get_my_performance_overview
+    return await performance_service.get_performance_overview(db, current_user.id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:125: in get_performance_overview
+    topics = await self.get_topic_performance(db, student_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:49: in get_topic_performance
+    rows = await self.get_topic_accuracy_metrics(db, student_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;app.services.performance.PerformanceService object at 0x000001800C8263C0&gt;
+db = &lt;sqlalchemy.ext.asyncio.session.AsyncSession object at 0x000001800CDFE030&gt;
+student_id = UUID('b1c17f9d-9e16-4037-ba28-38ecbc162b49'), topic_id = None
+
+    async def get_topic_accuracy_metrics(self, db: AsyncSession, student_id: uuid.UUID, topic_id: uuid.UUID = None):
+        # Base query to fetch sum(marks_obtained) and sum(marks_max) for all EVALUATED tests per topic
+        stmt = (
+            select(
+                Question.topic_id,
+                Topic.name.label("topic_name"),
+&gt;               Topic.subject_id,
+                ^^^^^^^^^^^^^^^^
+                func.count(Answer.id).label("attempts"),
+                func.sum(Evaluation.marks_obtained).label("total_obtained"),
+                func.sum(Question.marks).label("total_max")
+            )
+            .join(Answer, Answer.question_id == Question.id)
+            .join(Evaluation, Evaluation.answer_id == Answer.id)
+            .join(MockTest, Answer.test_id == MockTest.id)
+            .join(Topic, Question.topic_id == Topic.id)
+            .where(
+                Answer.student_id == student_id,
+                MockTest.status == ExamStatus.EVALUATED
+            )
+        )
+E       AttributeError: type object 'Topic' has no attribute 'subject_id'
+
+app\services\performance.py:25: AttributeError</failure></testcase><testcase classname="tests.performance.test_performance_analytics" name="test_get_topics_performance" time="0.081"><failure message="AttributeError: type object 'Topic' has no attribute 'subject_id'">auth_client_student = &lt;httpx.AsyncClient object at 0x000001800CFBFBB0&gt;
+
+    @pytest.mark.asyncio
+    async def test_get_topics_performance(auth_client_student):
+&gt;       response = await auth_client_student.get("/api/v1/performance/me/topics")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\performance\test_performance_analytics.py:15: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\httpx\_client.py:1768: in get
+    return await self.request(
+.venv\Lib\site-packages\httpx\_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv\Lib\site-packages\httpx\_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv\Lib\site-packages\httpx\_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_transports\asgi.py:170: in handle_async_request
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\applications.py:1163: in __call__
+    await super().__call__(scope, receive, send)
+.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv\Lib\site-packages\starlette\middleware\cors.py:88: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\routing.py:670: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2734: in app
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1791: in _handle_selected
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1800: in _handle_selected
+    await original_route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1279: in handle
+    await app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:158: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\routing.py:144: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\fastapi\routing.py:706: in app
+    raw_response = await run_endpoint_function(
+.venv\Lib\site-packages\fastapi\routing.py:352: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\api\routes\performance.py:45: in get_my_topics_performance
+    return await performance_service.get_topic_performance(db, current_user.id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:49: in get_topic_performance
+    rows = await self.get_topic_accuracy_metrics(db, student_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;app.services.performance.PerformanceService object at 0x000001800C8263C0&gt;
+db = &lt;sqlalchemy.ext.asyncio.session.AsyncSession object at 0x000001800CF86250&gt;
+student_id = UUID('b1c17f9d-9e16-4037-ba28-38ecbc162b49'), topic_id = None
+
+    async def get_topic_accuracy_metrics(self, db: AsyncSession, student_id: uuid.UUID, topic_id: uuid.UUID = None):
+        # Base query to fetch sum(marks_obtained) and sum(marks_max) for all EVALUATED tests per topic
+        stmt = (
+            select(
+                Question.topic_id,
+                Topic.name.label("topic_name"),
+&gt;               Topic.subject_id,
+                ^^^^^^^^^^^^^^^^
+                func.count(Answer.id).label("attempts"),
+                func.sum(Evaluation.marks_obtained).label("total_obtained"),
+                func.sum(Question.marks).label("total_max")
+            )
+            .join(Answer, Answer.question_id == Question.id)
+            .join(Evaluation, Evaluation.answer_id == Answer.id)
+            .join(MockTest, Answer.test_id == MockTest.id)
+            .join(Topic, Question.topic_id == Topic.id)
+            .where(
+                Answer.student_id == student_id,
+                MockTest.status == ExamStatus.EVALUATED
+            )
+        )
+E       AttributeError: type object 'Topic' has no attribute 'subject_id'
+
+app\services\performance.py:25: AttributeError</failure></testcase><testcase classname="tests.performance.test_performance_analytics" name="test_get_strong_topics" time="0.084"><failure message="AttributeError: type object 'Topic' has no attribute 'subject_id'">auth_client_student = &lt;httpx.AsyncClient object at 0x000001800CE071D0&gt;
+
+    @pytest.mark.asyncio
+    async def test_get_strong_topics(auth_client_student):
+&gt;       response = await auth_client_student.get("/api/v1/performance/me/strong-topics")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\performance\test_performance_analytics.py:22: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\httpx\_client.py:1768: in get
+    return await self.request(
+.venv\Lib\site-packages\httpx\_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv\Lib\site-packages\httpx\_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv\Lib\site-packages\httpx\_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_transports\asgi.py:170: in handle_async_request
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\applications.py:1163: in __call__
+    await super().__call__(scope, receive, send)
+.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv\Lib\site-packages\starlette\middleware\cors.py:88: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\routing.py:670: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2734: in app
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1791: in _handle_selected
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1800: in _handle_selected
+    await original_route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1279: in handle
+    await app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:158: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\routing.py:144: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\fastapi\routing.py:706: in app
+    raw_response = await run_endpoint_function(
+.venv\Lib\site-packages\fastapi\routing.py:352: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\api\routes\performance.py:54: in get_my_strong_topics
+    return await performance_service.get_strong_topics(db, current_user.id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:89: in get_strong_topics
+    topics = await self.get_topic_performance(db, student_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:49: in get_topic_performance
+    rows = await self.get_topic_accuracy_metrics(db, student_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;app.services.performance.PerformanceService object at 0x000001800C8263C0&gt;
+db = &lt;sqlalchemy.ext.asyncio.session.AsyncSession object at 0x000001800CF79B80&gt;
+student_id = UUID('b1c17f9d-9e16-4037-ba28-38ecbc162b49'), topic_id = None
+
+    async def get_topic_accuracy_metrics(self, db: AsyncSession, student_id: uuid.UUID, topic_id: uuid.UUID = None):
+        # Base query to fetch sum(marks_obtained) and sum(marks_max) for all EVALUATED tests per topic
+        stmt = (
+            select(
+                Question.topic_id,
+                Topic.name.label("topic_name"),
+&gt;               Topic.subject_id,
+                ^^^^^^^^^^^^^^^^
+                func.count(Answer.id).label("attempts"),
+                func.sum(Evaluation.marks_obtained).label("total_obtained"),
+                func.sum(Question.marks).label("total_max")
+            )
+            .join(Answer, Answer.question_id == Question.id)
+            .join(Evaluation, Evaluation.answer_id == Answer.id)
+            .join(MockTest, Answer.test_id == MockTest.id)
+            .join(Topic, Question.topic_id == Topic.id)
+            .where(
+                Answer.student_id == student_id,
+                MockTest.status == ExamStatus.EVALUATED
+            )
+        )
+E       AttributeError: type object 'Topic' has no attribute 'subject_id'
+
+app\services\performance.py:25: AttributeError</failure></testcase><testcase classname="tests.performance.test_readiness" name="test_get_my_readiness_strong_student" time="0.085"><failure message="AttributeError: type object 'Topic' has no attribute 'subject_id'">auth_client_student = &lt;httpx.AsyncClient object at 0x000001800CDFF570&gt;
+
+    @pytest.mark.asyncio
+    async def test_get_my_readiness_strong_student(auth_client_student):
+&gt;       response = await auth_client_student.get("/api/v1/performance/me/readiness")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\performance\test_readiness.py:6: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\httpx\_client.py:1768: in get
+    return await self.request(
+.venv\Lib\site-packages\httpx\_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv\Lib\site-packages\httpx\_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv\Lib\site-packages\httpx\_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_transports\asgi.py:170: in handle_async_request
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\applications.py:1163: in __call__
+    await super().__call__(scope, receive, send)
+.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv\Lib\site-packages\starlette\middleware\cors.py:88: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\routing.py:670: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2734: in app
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1791: in _handle_selected
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1800: in _handle_selected
+    await original_route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1279: in handle
+    await app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:158: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\routing.py:144: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\fastapi\routing.py:706: in app
+    raw_response = await run_endpoint_function(
+.venv\Lib\site-packages\fastapi\routing.py:352: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\api\routes\performance.py:82: in get_my_readiness
+    return await readiness_service.get_readiness(db, current_user.id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\readiness.py:20: in get_readiness
+    overview = await performance_service.get_performance_overview(db, student_id)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:125: in get_performance_overview
+    topics = await self.get_topic_performance(db, student_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:49: in get_topic_performance
+    rows = await self.get_topic_accuracy_metrics(db, student_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;app.services.performance.PerformanceService object at 0x000001800C8263C0&gt;
+db = &lt;sqlalchemy.ext.asyncio.session.AsyncSession object at 0x000001800CFC26D0&gt;
+student_id = UUID('b1c17f9d-9e16-4037-ba28-38ecbc162b49'), topic_id = None
+
+    async def get_topic_accuracy_metrics(self, db: AsyncSession, student_id: uuid.UUID, topic_id: uuid.UUID = None):
+        # Base query to fetch sum(marks_obtained) and sum(marks_max) for all EVALUATED tests per topic
+        stmt = (
+            select(
+                Question.topic_id,
+                Topic.name.label("topic_name"),
+&gt;               Topic.subject_id,
+                ^^^^^^^^^^^^^^^^
+                func.count(Answer.id).label("attempts"),
+                func.sum(Evaluation.marks_obtained).label("total_obtained"),
+                func.sum(Question.marks).label("total_max")
+            )
+            .join(Answer, Answer.question_id == Question.id)
+            .join(Evaluation, Evaluation.answer_id == Answer.id)
+            .join(MockTest, Answer.test_id == MockTest.id)
+            .join(Topic, Question.topic_id == Topic.id)
+            .where(
+                Answer.student_id == student_id,
+                MockTest.status == ExamStatus.EVALUATED
+            )
+        )
+E       AttributeError: type object 'Topic' has no attribute 'subject_id'
+
+app\services\performance.py:25: AttributeError</failure></testcase><testcase classname="tests.performance.test_readiness" name="test_get_my_readiness_avg_student" time="0.083"><failure message="AttributeError: type object 'Topic' has no attribute 'subject_id'">auth_client_student2 = &lt;httpx.AsyncClient object at 0x000001800CF73CE0&gt;
+
+    @pytest.mark.asyncio
+    async def test_get_my_readiness_avg_student(auth_client_student2):
+&gt;       response = await auth_client_student2.get("/api/v1/performance/me/readiness")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\performance\test_readiness.py:16: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\httpx\_client.py:1768: in get
+    return await self.request(
+.venv\Lib\site-packages\httpx\_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv\Lib\site-packages\httpx\_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv\Lib\site-packages\httpx\_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\httpx\_transports\asgi.py:170: in handle_async_request
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\applications.py:1163: in __call__
+    await super().__call__(scope, receive, send)
+.venv\Lib\site-packages\starlette\applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\errors.py:186: in __call__
+    raise exc
+.venv\Lib\site-packages\starlette\middleware\errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv\Lib\site-packages\starlette\middleware\cors.py:88: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv\Lib\site-packages\starlette\routing.py:670: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2734: in app
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1791: in _handle_selected
+    await route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1780: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:2789: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1800: in _handle_selected
+    await original_route.handle(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:1279: in handle
+    await app(scope, receive, send)
+.venv\Lib\site-packages\fastapi\routing.py:158: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv\Lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv\Lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv\Lib\site-packages\fastapi\routing.py:144: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\fastapi\routing.py:706: in app
+    raw_response = await run_endpoint_function(
+.venv\Lib\site-packages\fastapi\routing.py:352: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\api\routes\performance.py:82: in get_my_readiness
+    return await readiness_service.get_readiness(db, current_user.id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\readiness.py:20: in get_readiness
+    overview = await performance_service.get_performance_overview(db, student_id)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:125: in get_performance_overview
+    topics = await self.get_topic_performance(db, student_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\services\performance.py:49: in get_topic_performance
+    rows = await self.get_topic_accuracy_metrics(db, student_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;app.services.performance.PerformanceService object at 0x000001800C8263C0&gt;
+db = &lt;sqlalchemy.ext.asyncio.session.AsyncSession object at 0x000001800CFF9910&gt;
+student_id = UUID('ef78e534-34f2-43f1-998f-750799a55395'), topic_id = None
+
+    async def get_topic_accuracy_metrics(self, db: AsyncSession, student_id: uuid.UUID, topic_id: uuid.UUID = None):
+        # Base query to fetch sum(marks_obtained) and sum(marks_max) for all EVALUATED tests per topic
+        stmt = (
+            select(
+                Question.topic_id,
+                Topic.name.label("topic_name"),
+&gt;               Topic.subject_id,
+                ^^^^^^^^^^^^^^^^
+                func.count(Answer.id).label("attempts"),
+                func.sum(Evaluation.marks_obtained).label("total_obtained"),
+                func.sum(Question.marks).label("total_max")
+            )
+            .join(Answer, Answer.question_id == Question.id)
+            .join(Evaluation, Evaluation.answer_id == Answer.id)
+            .join(MockTest, Answer.test_id == MockTest.id)
+            .join(Topic, Question.topic_id == Topic.id)
+            .where(
+                Answer.student_id == student_id,
+                MockTest.status == ExamStatus.EVALUATED
+            )
+        )
+E       AttributeError: type object 'Topic' has no attribute 'subject_id'
+
+app\services\performance.py:25: AttributeError</failure></testcase><testcase classname="tests.performance.test_readiness" name="test_get_my_readiness_admin_forbidden" time="0.039" /><testcase classname="tests.performance.test_readiness" name="test_get_my_readiness_admin_forbidden_async" time="0.078" /></testsuite></testsuites>

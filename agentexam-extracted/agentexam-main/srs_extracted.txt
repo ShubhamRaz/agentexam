@@ -1,0 +1,200 @@
+Software Requirements Specification
+for
+AgentExam: An AI-Powered Autonomous Exam Preparation and Assessment System
+Version 1.0 approved
+Prepared by Shubham Raj
+Sharda University
+30 July 2026
+Table of Contents
+Revision History
+1. Introduction
+1.1 Purpose
+This document specifies the software requirements for Version 1.0 of AgentExam, an AI-powered autonomous exam preparation and assessment system. AgentExam is intended to help students prepare for both theory and practical university examinations by acting as a virtual examiner and mentor rather than a simple question-answering chatbot. This SRS covers the complete scope of the AgentExam system, including syllabus and material analysis, adaptive mock testing, practical/viva simulation, performance tracking, and personalized study plan generation. It is intended to serve as the primary reference for the design, development, and testing of the system.
+1.2 Document Conventions
+This document follows the IEEE-derived SRS template popularized by Karl Wiegers. Functional requirements are uniquely identified using the format REQ-<feature-number>.<sequence-number> (for example, REQ-1.1). Each requirement in Section 3 inherits the priority (High, Medium, or Low) assigned to its parent system feature unless a requirement is explicitly given its own priority. Headings are numbered hierarchically (for example, 3.2.1) to allow unambiguous cross-referencing. Text in bold introduces defined terms that also appear in Appendix A: Glossary.
+1.3 Intended Audience and Reading Suggestions
+This SRS is intended for the following readers:
+Developers and system architects, who should read Sections 2 through 5 in full before beginning design.
+Project supervisors / evaluators, who may focus on Section 1 (Introduction), Section 2 (Overall Description), and Section 3 (System Features) to assess project scope and value.
+Testers and QA reviewers, who should use the functional requirements in Section 3 and the nonfunctional requirements in Section 5 as the basis for test case design.
+Future team members (teachers, LMS integrators), who may refer to Section 4 (External Interface Requirements) and the Future Scope items captured in Section 6.
+Readers new to the project are encouraged to read Sections 1 and 2 first for context, then proceed to Section 3 for feature-level detail, and finally Sections 4 through 6 for interface, quality, and miscellaneous requirements.
+1.4 Project Scope
+AgentExam is an AI-powered autonomous learning and assessment platform that helps students prepare for both theory and practical examinations. Students upload their syllabus, previous year question papers (PYQs), lecture notes, and lab manuals. The system analyzes exam patterns, identifies frequently tested topics, determines chapter-wise weightage, and generates a personalized study plan.
+For theory exams, AgentExam conducts adaptive mock tests using multiple-choice, short-answer, and long-answer questions based on the syllabus and PYQ trends, evaluates responses, identifies weak concepts, and provides targeted feedback. For practical exams, it simulates a real practical examination by assigning experiments, asking adaptive viva questions, evaluating coding or problem-solving steps, and providing a readiness score with improvement suggestions.
+The system continuously tracks student progress across multiple mock tests, adjusts question difficulty based on performance, and predicts exam readiness. Unlike a general-purpose chatbot such as ChatGPT, AgentExam is designed to replicate the structured, end-to-end experience of preparing for and taking a real university examination, with course-specific material analysis, adaptive testing, longitudinal progress tracking, and readiness evaluation for both theory and practical components. Version 1.0 targets individual students as the primary user base; teacher-facing and institutional features are identified as future scope in Section 6.
+1.5 References
+Wiegers, K. — Software Requirements Specification (SRS) Template, used as the structural basis for this document.
+IEEE Std 830-1998 — IEEE Recommended Practice for Software Requirements Specifications.
+<Institution course syllabus and PYQ repository — to be added once finalized as pilot content for the system.>
+2. Overall Description
+2.1 Product Perspective
+AgentExam is a new, self-contained AI-powered application; it is not a follow-on to an existing product. It consists of a web-based front end used by students, a backend application server, a document ingestion and analysis pipeline for syllabi/PYQs/notes/lab manuals, a large-language-model (LLM)-based question generation and evaluation engine, and a database that stores student profiles, uploaded materials, mock test attempts, and progress history. The system operates as a standalone platform in Version 1.0, with optional future integration into external Learning Management Systems (LMS) as described in Section 6.
+At a high level, the system consists of the following major components:
+Ingestion & Analysis Engine — parses uploaded syllabus, PYQs, notes, and lab manuals; extracts topics and computes chapter-wise weightage.
+Theory Mock Test Engine — generates and adaptively administers MCQ, short-answer, and long-answer questions; evaluates responses.
+Practical/Viva Simulation Engine — assigns experiments, poses adaptive viva questions, and evaluates coding/procedural steps.
+Progress & Readiness Tracker — aggregates results across sessions, adjusts difficulty, and computes a readiness score.
+Study Plan Generator — produces and updates a personalized revision plan based on identified weak areas.
+2.2 Product Features
+The major features of AgentExam, detailed fully in Section 3, are summarized below:
+Uploading and analyzing syllabus, PYQs, notes, and lab manuals to identify high-probability topics and question types.
+Conducting adaptive theory mock tests (MCQ, short-answer, long-answer) with automated evaluation and feedback.
+Simulating practical exams and viva sessions, including experiment assignment and evaluation of coding/problem-solving steps.
+Tracking performance and progress across multiple mock tests and sessions, and adjusting difficulty accordingly.
+Generating and continuously updating a personalized study and revision plan based on weak areas.
+2.3 User Classes and Characteristics
+2.4 Operating Environment
+Client: modern web browsers (Chrome, Edge, Firefox, Safari — latest two major versions) on desktop, tablet, and mobile screen sizes.
+Server: cloud-hosted backend (containerized services) capable of horizontal scaling; Linux-based server OS.
+AI/LLM services: accessed via API to a large language model provider for question generation, answer evaluation, and adaptive feedback.
+Database: relational database for structured data (user accounts, scores, progress) plus object storage for uploaded documents (syllabi, PYQs, notes, lab manuals).
+Network: requires an internet connection for all AI-dependent features; the system is not designed for fully offline use in Version 1.0.
+2.5 Design and Implementation Constraints
+The system must comply with the data-handling and privacy policies of the hosting institution/organization, particularly regarding storage of student-uploaded academic material.
+Question generation and evaluation depend on a third-party LLM API; response latency and per-request cost of that API constrain how many questions can be generated per session.
+Uploaded documents may be in varied formats (PDF, DOCX, scanned images); OCR accuracy for scanned or handwritten lab manuals is a known implementation constraint.
+The adaptive difficulty and readiness-prediction algorithms must be explainable enough to justify feedback given to students (avoiding opaque "black box" scoring).
+The system must support multiple concurrent mock-test sessions without cross-contamination of one student's adaptive question state with another's.
+2.6 User Documentation
+In-app onboarding guide covering how to upload syllabus/PYQ/notes/lab manuals and start a mock test or practical simulation.
+Online help center / FAQ covering account setup, supported file formats, scoring methodology, and troubleshooting.
+Short walkthrough tooltips shown on first use of the mock test, viva simulation, and progress dashboard screens.
+2.7 Assumptions and Dependencies
+Assumes students have access to a digital copy (or scannable copy) of their syllabus, PYQs, notes, and lab manuals to upload.
+Assumes continued availability and acceptable pricing of a third-party LLM API for question generation and evaluation; a change in that API's terms, pricing, or availability would directly affect the system's functional requirements.
+Assumes uploaded PYQs and syllabi are representative enough of the actual exam pattern for the topic-weightage analysis to be meaningful.
+Depends on reliable OCR/document-parsing libraries for extracting text from scanned or image-based lab manuals and handwritten notes.
+Assumes students self-report or the system can reasonably infer their course/university exam pattern in the absence of a formal LMS integration (planned for a future release).
+3. System Features
+This section organizes the functional requirements of AgentExam by system feature, corresponding to the major services the product provides to students.
+3.1 Syllabus and Material Analysis
+3.1.1 Description and Priority
+Allows a student to upload their syllabus, previous year question papers (PYQs), lecture notes, and lab manuals, and have the system automatically analyze exam patterns, identify frequently tested topics, and compute chapter-wise weightage. Priority: High.
+3.1.2 Stimulus/Response Sequences
+Student uploads one or more documents (syllabus, PYQs, notes, lab manual) → system confirms successful upload and begins processing.
+Student requests a topic-weightage summary → system displays a chapter-wise breakdown of high-, medium-, and low-probability topics.
+Student uploads an additional PYQ after initial analysis → system re-runs the analysis and updates the topic weightage.
+3.1.3 Functional Requirements
+REQ-1.1: The system shall allow students to upload documents in PDF, DOCX, and image formats for syllabus, PYQs, notes, and lab manuals.
+REQ-1.2: The system shall extract text content from uploaded documents, including OCR processing for scanned or image-based files.
+REQ-1.3: The system shall identify and list distinct topics/chapters present in the uploaded syllabus.
+REQ-1.4: The system shall compute the relative frequency with which each topic appears across uploaded PYQs and present this as a chapter-wise weightage.
+REQ-1.5: The system shall flag topics as high-, medium-, or low-probability based on their computed weightage and recency in PYQ trends.
+REQ-1.6: If an uploaded document cannot be parsed (corrupted file, unsupported format, unreadable scan), the system shall notify the student with a specific, actionable error message.
+3.2 Adaptive Theory Mock Test Engine
+3.2.1 Description and Priority
+Conducts adaptive mock tests using MCQ, short-answer, and long-answer questions generated from the analyzed syllabus and PYQ trends, evaluates student responses, and identifies weak concepts. Priority: High.
+3.2.2 Stimulus/Response Sequences
+Student starts a theory mock test → system generates a question set weighted toward high-probability topics.
+Student submits an answer → system evaluates it and, for MCQs, gives immediate correctness feedback; for short/long answers, gives evaluated feedback within a defined response time.
+Student performs poorly on questions from a given topic → system increases the proportion of future questions drawn from that topic and/or lowers their difficulty to reinforce fundamentals.
+Student performs consistently well on a topic → system increases the difficulty of subsequent questions on that topic.
+3.2.3 Functional Requirements
+REQ-2.1: The system shall generate mock test questions in MCQ, short-answer, and long-answer formats based on syllabus topics and PYQ trends.
+REQ-2.2: The system shall allow the student to configure a mock test by topic scope, question count, and time limit before starting.
+REQ-2.3: The system shall automatically evaluate MCQ responses immediately upon submission.
+REQ-2.4: The system shall evaluate short-answer and long-answer responses using AI-based assessment against expected key concepts, and shall return a score and qualitative feedback.
+REQ-2.5: The system shall dynamically adjust the difficulty of subsequent questions based on the student's ongoing performance within a test session.
+REQ-2.6: The system shall identify and report weak concepts based on incorrect or low-scoring responses at the end of each mock test.
+REQ-2.7: The system shall provide targeted revision recommendations linked to each identified weak concept.
+3.3 Practical Exam and Viva Simulation
+3.3.1 Description and Priority
+Simulates a real practical examination by assigning experiments, asking adaptive viva questions, evaluating coding or problem-solving steps, and providing a readiness score with personalized improvement suggestions. Priority: High.
+3.3.2 Stimulus/Response Sequences
+Student selects a lab/practical subject → system assigns an experiment consistent with the uploaded lab manual.
+Student submits code or a step-by-step procedure → system evaluates correctness, structure, and completeness of the submitted steps.
+System poses an adaptive viva question related to the completed experiment → student responds → system evaluates the response and asks a follow-up question if the answer is incomplete.
+Practical session concludes → system computes and displays a readiness score with specific improvement suggestions.
+3.3.3 Functional Requirements
+REQ-3.1: The system shall assign practical experiments to the student based on the content of the uploaded lab manual.
+REQ-3.2: The system shall accept student submissions of code or written procedural steps for an assigned experiment.
+REQ-3.3: The system shall evaluate submitted code or procedural steps for correctness and completeness against expected outcomes.
+REQ-3.4: The system shall generate adaptive viva questions related to the assigned experiment, adjusting follow-up questions based on the quality of the student's previous answer.
+REQ-3.5: The system shall compute a practical-exam readiness score reflecting performance across experiment execution and viva responses.
+REQ-3.6: The system shall provide personalized improvement suggestions for practical/viva weaknesses identified during the session.
+3.4 Performance Tracking and Progress Analytics
+3.4.1 Description and Priority
+Continuously tracks student progress across multiple mock tests and practical sessions, adjusts question difficulty based on historical performance, and predicts overall exam readiness. Priority: Medium.
+3.4.2 Stimulus/Response Sequences
+Student completes a mock test or practical session → system stores the results and updates the student's overall progress profile.
+Student opens the progress dashboard → system displays performance trends over time, by topic and by test type.
+System detects a sustained decline or improvement in a topic area across sessions → system updates that topic's difficulty baseline for future tests.
+Student requests an exam-readiness estimate → system computes and displays a predicted readiness percentage based on aggregated performance history.
+3.4.3 Functional Requirements
+REQ-4.1: The system shall store the results of every completed mock test and practical session against the student's profile.
+REQ-4.2: The system shall display a progress dashboard showing performance trends by topic and by test type across sessions.
+REQ-4.3: The system shall adjust the baseline difficulty of future questions for a topic based on the student's historical performance on that topic.
+REQ-4.4: The system shall compute and display an overall predicted exam-readiness score based on aggregated theory and practical performance.
+REQ-4.5: The system shall highlight the topics most in need of further attention, ranked by weightage and current weak-performance level.
+3.5 Personalized Study Plan Generator
+3.5.1 Description and Priority
+Generates and continuously updates a personalized study and revision plan for the student, recommending what to study next based on identified weak areas and topic weightage. Priority: Medium.
+3.5.2 Stimulus/Response Sequences
+Student completes syllabus/PYQ analysis for the first time → system generates an initial study plan ordered by topic weightage.
+Student completes a mock test revealing new weak areas → system updates the study plan to prioritize those areas.
+Student views the study plan → system shows recommended next topics/actions along with estimated time to cover each.
+3.5.3 Functional Requirements
+REQ-5.1: The system shall generate an initial personalized study plan after the first successful syllabus/PYQ/notes analysis.
+REQ-5.2: The system shall re-prioritize the study plan whenever new weak areas are identified from a mock test or practical session.
+REQ-5.3: The system shall recommend a next-topic-to-study suggestion on the student's home/dashboard screen.
+REQ-5.4: The system shall allow the student to mark study-plan items as complete and shall reflect this in subsequent plan updates.
+4. External Interface Requirements
+4.1 User Interfaces
+A responsive web application providing: a document upload screen, a topic-weightage dashboard, a theory mock test interface (MCQ/short-answer/long-answer), a practical/viva simulation interface (code editor plus conversational viva panel), a progress/readiness dashboard, and a study-plan view.
+Every screen shall include a persistent navigation bar with access to Home, Upload Materials, Mock Tests, Practical Simulation, Progress, and Study Plan.
+Standard help/tooltip icons shall be present on the upload, mock test, and practical simulation screens to explain expected inputs.
+Error messages shall follow a consistent style: a short heading, a plain-language explanation, and a suggested next action.
+Detailed UI mockups and interaction flows will be documented separately in a User Interface Specification once wireframes are finalized.
+4.2 Hardware Interfaces
+No dedicated hardware devices are required; the system operates on standard student-owned devices (laptop, desktop, tablet, or smartphone) with a supported web browser.
+A working camera/microphone is optional and only required if a future voice-based viva feature (see Section 6) is enabled by the student.
+4.3 Software Interfaces
+LLM API — used for question generation, short/long-answer evaluation, viva question generation, and readiness-score reasoning. Communicates over HTTPS using JSON request/response payloads.
+Document parsing / OCR library or service — used to extract text from PDFs, DOCX files, and scanned images.
+Relational database — stores user accounts, uploaded-document metadata, mock test results, and progress history.
+Object storage service — stores the raw uploaded syllabus, PYQ, notes, and lab manual files.
+Authentication provider — handles student sign-up, login, and session management.
+4.4 Communications Interfaces
+All client-server communication shall use HTTPS (TLS 1.2 or higher).
+The system shall use a RESTful API (JSON over HTTP) for communication between the web client and the backend application server.
+Email notifications (e.g., study-plan reminders, mock test summaries) shall be sent via a transactional email service using standard SMTP/API-based delivery.
+Real-time or near-real-time feedback during mock tests and viva simulation may use WebSocket connections to reduce perceived latency.
+5. Other Nonfunctional Requirements
+5.1 Performance Requirements
+The system shall return MCQ evaluation results within 1 second of submission under normal load.
+The system shall return AI-based evaluation and feedback for short-answer and long-answer responses within 10 seconds under normal load.
+The syllabus/PYQ analysis for a typical document set (syllabus plus up to 10 PYQs) shall complete within 60 seconds.
+The system shall support at least 100 concurrent active mock-test sessions in Version 1.0 without noticeable degradation in response time.
+5.2 Safety Requirements 
+The system shall not present AI-generated readiness scores or feedback in a way that could be mistaken for an official, institution-issued exam result.
+The system shall include a visible disclaimer that AI-generated evaluations are a preparation aid and not a substitute for official grading or assessment.
+The system shall avoid generating feedback that could discourage or demoralize students; wording of weak-area feedback shall be constructive and specific.
+5.3 Security Requirements
+The system shall require authenticated login before allowing document upload, mock tests, or access to progress data.
+Uploaded documents and student performance data shall be encrypted at rest and in transit.
+The system shall restrict a student's access to only their own uploaded materials, test results, and progress history.
+The system shall comply with applicable data protection regulations governing storage of student academic records and personal data.
+Passwords shall be stored using a salted, industry-standard hashing algorithm; the system shall never store passwords in plain text.
+5.4 Software Quality Attributes
+Usability — a first-time student should be able to upload materials and start a mock test within 5 minutes without external help.
+Reliability — the mock test and practical simulation engines shall be available at least 99% of the time, excluding scheduled maintenance.
+Maintainability — the topic-analysis, question-generation, and evaluation logic shall be modular so that the underlying LLM provider can be replaced with minimal changes elsewhere in the system.
+Scalability — the system architecture shall support growth from an initial pilot of a few hundred students to multiple institutions without a redesign.
+Adaptability — the system shall be configurable to different university exam patterns and grading schemes without code changes, via configuration data.
+6. Other Requirements
+The following items are not covered elsewhere in this SRS but are relevant to the long-term direction of the project. Items marked (Future Scope) are out of scope for Version 1.0 and are recorded here to guide future releases:
+(Future Scope) Voice-based viva examinations, allowing spoken questions and answers during practical simulation.
+(Future Scope) A teacher dashboard for creating and reviewing mock exams and monitoring class-wide performance.
+(Future Scope) Integration with institutional Learning Management Systems (LMS) for automatic syllabus and roster import.
+(Future Scope) Analytics for faculty to identify commonly misunderstood topics across a cohort of students.
+(Future Scope) Support for multiple universities and examination patterns within a single deployment, including configurable grading and question-format rules.
+These future items broaden AgentExam's value beyond an individual study tool toward a platform usable by students, teachers, and educational institutions, and should be re-evaluated for inclusion in subsequent SRS revisions.
+Appendix A: Glossary
+Appendix B: Analysis Models
+The following analysis models are planned to support the design phase and will be attached or linked as separate diagrams once produced:
+A data flow diagram showing how uploaded documents move through the Ingestion & Analysis Engine to the Study Plan Generator.
+A class/entity-relationship diagram covering Student, Document, Topic, MockTest, Question, Response, PracticalSession, and ProgressRecord entities.
+A state-transition diagram for a mock test session (Not Started → In Progress → Adaptive Adjustment → Completed → Feedback Generated).
+A state-transition diagram for a practical/viva session (Experiment Assigned → Submission → Viva Question → Follow-up → Readiness Scored).
+Appendix C: Issues List

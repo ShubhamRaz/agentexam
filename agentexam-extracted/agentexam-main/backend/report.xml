@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.551" timestamp="2026-08-22T09:48:31.749765+05:30" hostname="DESKTOP-RE3LND5"><testcase classname="tests.rag.test_ai" name="test_generate_questions_unauthorized" time="0.195" /><testcase classname="tests.rag.test_ai" name="test_generate_questions_authorized" time="0.199"><failure message="AttributeError: type object 'JobStatus' has no attribute 'PROCESSING'">auth_client_admin = &lt;httpx.AsyncClient object at 0x00000199DCF08B90&gt;
+demo_subject_id = '46ee3581-e0b5-416d-94be-1638be74a062'
+
+    @pytest.mark.asyncio
+    async def test_generate_questions_authorized(auth_client_admin, demo_subject_id):
+        """ Admins/Teachers can generate AI questions """
+        if not demo_subject_id:
+            pytest.skip("No demo subject found")
+    
+        response = await auth_client_admin.post("/api/v1/ai/questions/generate", json={
+            "subject_id": demo_subject_id,
+            "question_type": "MCQ",
+            "difficulty": "MEDIUM",
+            "marks": 5,
+            "count": 2
+        })
+    
+        assert response.status_code == 202
+        data = response.json()
+        assert "id" in data
+&gt;       assert data["status"] in [JobStatus.PENDING, JobStatus.PROCESSING, JobStatus.COMPLETED, JobStatus.FAILED]
+                                                     ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: type object 'JobStatus' has no attribute 'PROCESSING'
+
+tests\rag\test_ai.py:39: AttributeError</failure></testcase></testsuite></testsuites>

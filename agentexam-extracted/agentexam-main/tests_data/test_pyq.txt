@@ -1,0 +1,35 @@
+Mock PYQ content for testing ingestion.
+Q1. What is the meaning of life?
+A. 42
+B. 24
+C. 12
+D. 0
+Answer: A
+
+Q2. What is 2+2?
+A. 3
+B. 4
+C. 5
+D. 6
+Answer: B
+
+Q3. What is the capital of France?
+A. London
+B. Berlin
+C. Paris
+D. Madrid
+Answer: C
+
+Q4. Which planet is known as the Red Planet?
+A. Venus
+B. Mars
+C. Jupiter
+D. Saturn
+Answer: B
+
+Q5. Who wrote Romeo and Juliet?
+A. Charles Dickens
+B. William Shakespeare
+C. Jane Austen
+D. Mark Twain
+Answer: B
