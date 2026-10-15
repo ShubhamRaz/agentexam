@@ -1,0 +1,22 @@
+{
+  "fig1_architecture.png": {
+    "w": 1044,
+    "h": 1194
+  },
+  "fig2_pipeline.png": {
+    "w": 1044,
+    "h": 894
+  },
+  "fig3_rag.png": {
+    "w": 1044,
+    "h": 1194
+  },
+  "fig4_results.png": {
+    "w": 926,
+    "h": 691
+  },
+  "eq_bm25.png": {
+    "w": 1013,
+    "h": 150
+  }
+}

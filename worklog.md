@@ -291,3 +291,26 @@ Stage Summary:
 - Files: next.config.ts, .gitignore, prisma/schema.prisma, src/lib/{file-extract,rag,ai,types}.ts, src/app/api/lib/{compute,pipeline}.ts, src/app/api/materials/{route,upload/route,[id]/route,[id]/reprocess/route}.ts, src/app/api/performance/me/route.ts, src/app/api/faculty/dashboard/route.ts (null-safety), src/views/{materials,performance}.tsx (subagent + dot polish).
 - All five user complaints fixed at the ROOT: weak detection logic, 502s (async pipeline + storage outside the watched tree + SDK retry/backoff + sequential frontend queue), category-wise materials, PYQ analysis (extraction prompt + grounded fallback + frequency recompute), RAG (retrieval over every material feeds question bank/study plan/exams/viva/importance).
 - NOTE for future agents: the dev server must be started detached or it dies when the tool call ends — working pattern: `bash -c '( (setsid bun run dev > /tmp/devboot.log 2>&1 &) ; sleep 1 )'`. Material files live at /home/z/agentexam-materials (Material.filePath). Upload-driven subjects appear in GET /api/materials with subjectId '' until the background pipeline assigns one.
+
+---
+Task ID: 16
+Agent: main (Z.ai Code)
+Task: Create a proper IEEE-format research paper for the AgentExam project in Word docx and add it to the project
+
+Work Log:
+- Read full worklog (Tasks 1-15) + docx skill (SKILL.md, routes/create.md, scenes/academic.md, references/docx-js-core.md, common-rules.md, docx-js-advanced.md, chart-templates.md) to ground the paper in the real system.
+- Installed `docx` npm package (project root); verified CONTINUOUS two-column section support (w:cols) before building.
+- Created paper/make_figures.py — 5 matplotlib assets at 300 dpi, print-friendly grayscale, IEEE figure conventions (sans labels, column-width 3.4 in): fig1 layered architecture (4 layers + JWT/polling annotations), fig2 async pipeline (6-box snake flow), fig3 RAG flow (7-stage vertical), fig4 grouped bar chart of measured question-bank composition (CC 39 AI + 17 PYQ, DAA 14 AI + 18 PYQ), eq_bm25 mathtext equation. All dimensions recorded to figures/manifest.json for aspect-safe embedding.
+- VLM-inspected figures 3 rounds: fixed fig2 title overflow (axes margins shrank draw area -> fig.add_axes([0,0,1,1])), fig3 clipped boxes (ylim computed from stack height), fig1 Data Layer below ylim (dynamic y_start). Final verdict: PASS on all.
+- Created paper/generate_paper.js (~640 lines) — full IEEE conference format: A4, ~0.67 in side margins, 0.25 in column gap; single-column title block section (24 pt title, 11 pt authors with superscripts, affiliations, email) + CONTINUOUS two-column body; TNR 10 pt justified body, single spacing, 0.25 in first-line indent; SMALL-CAPS centered H1 (I.-X. + References), italic lettered H2; bold 9 pt abstract + index terms; 8 pt figure/table captions; numbered display equation (1) via borderless 2-cell table; three-line IEEE tables (TABLE I data model, TABLE II stack, TABLE III defect resolution) with tableHeader/cantSplit/keepNext; contributions as numbered list; 14 real IEEE-style references (Lewis RAG, BM25, GPT-4, VanLehn, Kurdi AQG, Settles, Black & Wiliam, Kasneci, Tesseract, CoT, DPR, Next.js, Prisma) at 9 pt hanging indent; centered page-number footer.
+- Content fully grounded in measured worklog facts: 0.3 s upload ack, 20-25 s background completion, 3,558-char extraction (vs 0), 35 verbatim PYQs, 8 weak topics, 5u/20t/14q onboarding, classroom scores 81/54 avg 67.5; defect-resolution table maps all five user-reported bugs to root cause/fix/outcome. Authors use IEEE template convention (First A. Author / Institute Name) for user replacement.
+- Fixed `.**` markup lead-in bug (9 occurrences) that would have italicized whole paragraphs in the *italic* run parser.
+- Generated AgentExam_Research_Paper_IEEE.docx (364 KB). postcheck.py: 9/9 passed, 0 errors, 0 warnings. LibreOffice PDF render: 8 pages A4, ~5,400 words; VLM page-by-page inspection (pages 1-8 in 3 batches): PASS; pdftotext content-integrity checks: all key elements present (title, abstract, index terms, sections, equation, all figures/tables, refs [1]-[14], measurements).
+- Added paper to project: paper/{make_figures.py, generate_paper.js, figures/, AgentExam_Research_Paper_IEEE.docx, AgentExam_Research_Paper_IEEE.pdf} + public/paper/{docx,pdf} served by the app (curl 200, full byte counts). Dev server healthy throughout (dev.log clean, GET / 200); agent-browser sanity check: login page renders fully, zero page errors.
+
+Stage Summary:
+- Deliverable: paper/AgentExam_Research_Paper_IEEE.docx — 8-page, 2-column IEEE-format research paper "AgentExam: An Upload-Driven Retrieval-Augmented AI Agent for Adaptive Examination Preparation" (4 figures, 1 equation, 3 tables, 14 references, 10 sections).
+- Also downloadable from the running app at /paper/AgentExam_Research_Paper_IEEE.docx (+ PDF preview).
+- Reproducible: `python3 paper/make_figures.py && bun paper/generate_paper.js`.
+- Author block uses IEEE template placeholders (First A. Author, Institute Name) — user must replace with real names/affiliations before submission.
+- App untouched (no source changes; only `docx` devDependency + static public/paper assets); E2E-verified still healthy.
