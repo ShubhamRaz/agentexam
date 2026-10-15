@@ -12,7 +12,7 @@ model User {
   name         String
   email        String    @unique
   passwordHash String
-  role         String    @default("STUDENT") // STUDENT | TEACHER | ADMIN
+  role         String    @default("STUDENT") // STUDENT | FACULTY
   isActive     Boolean   @default(true)
   enrollmentNo String?
   semester     String?
@@ -22,11 +22,37 @@ model User {
   updatedAt    DateTime  @updatedAt
 }
 
+// A faculty-created class that students are added to.
+// Subjects/materials uploaded by the faculty under a classroom
+// are shared with every enrolled student.
+model Classroom {
+  id        String              @id @default(uuid())
+  name      String
+  code      String              @unique // 6-char join code
+  facultyId String
+  createdAt DateTime            @default(now())
+  students  ClassroomStudent[]
+  subjects  Subject[]       @relation("ClassroomSubjects")
+}
+
+model ClassroomStudent {
+  id           String    @id @default(uuid())
+  classroomId String
+  studentId    String
+  addedAt      DateTime  @default(now())
+  classroom    Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  @@unique([classroomId, studentId])
+}
+
 model Subject {
   id          String       @id @default(uuid())
   name        String
   code        String
   description String?
+  ownerId     String? // user who created it (from material upload); null = legacy seed
+  classroomId String? // set when created under a faculty classroom
+  classroom   Classroom? @relation("ClassroomSubjects", fields: [classroomId], references: [id])
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   units       Unit[]
@@ -65,8 +91,10 @@ model Material {
   mimeType         String
   fileSize         Int
   processingStatus String   @default("PROCESSED") // UPLOADED | PROCESSING | PROCESSED | FAILED
+  extractedText    String? // text extracted from the file (input for AI analysis)
+  analysisSummary String? // JSON {units,topics,questions,experiments} generated counts
   createdAt        DateTime @default(now())
-  subject          Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subject          Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 }
 
 model Question {
@@ -100,6 +128,9 @@ model MockTest {
   durationMinutes Int       @default(60)
   status          String    @default("DRAFT") // DRAFT | IN_PROGRESS | SUBMITTED | EVALUATED | EXPIRED
   questionIds     String    @default("[]") // JSON array of question ids
+  assignedById    String? // faculty user id when test is conducted/assigned
+  assignedTitle   String? // e.g. "Unit Test 1 — Cloud Computing"
+  dueDate         DateTime?
   startedAt       DateTime?
   expiresAt       DateTime?
   submittedAt     DateTime?

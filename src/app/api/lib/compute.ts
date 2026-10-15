@@ -3,7 +3,54 @@
    Private folder (underscore) — excluded from Next.js routing.
    ============================================================ */
 import { db } from '@/lib/db'
-import type { Material, StudyPlanData, StudyPlanTask } from '@/lib/types'
+import type {
+  Material,
+  StudyPlanData,
+  StudyPlanTask,
+  ClassroomSummary,
+  ConductedTestRow,
+  ConductedTestStudentRow,
+} from '@/lib/types'
+
+/* ---------- role-aware subject visibility ---------- */
+
+/**
+ * Subjects a user may see: FACULTY → subjects they created (their uploads);
+ * STUDENT → subjects created from THEIR uploads + subjects shared via any
+ * classroom they are enrolled in. Legacy subjects (ownerId null, no
+ * classroom) are invisible — a fresh student starts with NOTHING.
+ */
+export async function getVisibleSubjects(userId: string) {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { role: true } })
+  if (!user) return []
+  if (user.role === 'FACULTY') {
+    return db.subject.findMany({ where: { ownerId: userId }, orderBy: { name: 'asc' } })
+  }
+  const enrollments = await db.classroomStudent.findMany({
+    where: { studentId: userId },
+    select: { classroomId: true },
+  })
+  const classroomIds = enrollments.map(e => e.classroomId)
+  return db.subject.findMany({
+    where: {
+      OR: [
+        { ownerId: userId },
+        ...(classroomIds.length ? [{ classroomId: { in: classroomIds } }] : []),
+      ],
+    },
+    orderBy: { name: 'asc' },
+  })
+}
+
+export async function getVisibleSubjectIds(userId: string): Promise<string[]> {
+  const subjects = await getVisibleSubjects(userId)
+  return subjects.map(s => s.id)
+}
+
+export async function isSubjectVisible(userId: string, subjectId: string): Promise<boolean> {
+  const ids = await getVisibleSubjectIds(userId)
+  return ids.includes(subjectId)
+}
 
 /* ---------- material mapping ---------- */
 
@@ -16,15 +63,33 @@ interface MaterialWithSubject {
   createdAt: Date
   subjectId: string
   subject: { name: string }
+  uploadedBy?: string
+  analysisSummary?: string | null
 }
 
-export function mapMaterial(m: MaterialWithSubject): Material {
+export function mapMaterial(m: MaterialWithSubject, uploaderName?: string | null): Material {
   const status: Material['status'] =
     m.processingStatus === 'PROCESSED'
       ? 'processed'
       : m.processingStatus === 'FAILED'
         ? 'failed'
         : 'processing' // PROCESSING | UPLOADED | anything else
+  let analysisSummary: Material['analysisSummary'] = null
+  if (m.analysisSummary) {
+    try {
+      const parsed = JSON.parse(m.analysisSummary) as NonNullable<Material['analysisSummary']>
+      analysisSummary = {
+        units: Number(parsed.units) || 0,
+        topics: Number(parsed.topics) || 0,
+        questions: Number(parsed.questions) || 0,
+        experiments: Number(parsed.experiments) || 0,
+        subjectName: String(parsed.subjectName || m.subject.name),
+        isNewSubject: !!parsed.isNewSubject,
+      }
+    } catch {
+      analysisSummary = null
+    }
+  }
   return {
     id: m.id,
     name: m.title,
@@ -34,6 +99,8 @@ export function mapMaterial(m: MaterialWithSubject): Material {
     subjectId: m.subjectId,
     size: formatSize(m.fileSize),
     uploadDate: m.createdAt.toISOString(),
+    ...(uploaderName ? { uploadedByName: uploaderName } : {}),
+    ...(analysisSummary ? { analysisSummary } : {}),
   }
 }
 
@@ -326,7 +393,7 @@ export async function generateStudyPlan(userId: string): Promise<{
   planJson: string
 }> {
   const weakTopics = await computeWeakTopics(userId)
-  const subjects = await db.subject.findMany({ orderBy: { name: 'asc' } })
+  const subjects = await getVisibleSubjects(userId)
 
   const pool: Omit<PlanTaskJson, 'id' | 'completed' | 'date'>[] = []
 
@@ -428,4 +495,145 @@ export async function getOrCreateStudyPlan(userId: string) {
   })
   if (existing) return existing
   return generateStudyPlan(userId)
+}
+
+/* ---------- classrooms ---------- */
+
+/** Classroom rows → ClassroomSummary[] with batched student/subject/material counts. */
+export async function buildClassroomSummaries(
+  classrooms: { id: string; name: string; code: string; createdAt: Date }[]
+): Promise<ClassroomSummary[]> {
+  if (classrooms.length === 0) return []
+  const ids = classrooms.map(c => c.id)
+  const [studentGroups, subjectGroups, subjects] = await Promise.all([
+    db.classroomStudent.groupBy({
+      by: ['classroomId'],
+      where: { classroomId: { in: ids } },
+      _count: { _all: true },
+    }),
+    db.subject.groupBy({
+      by: ['classroomId'],
+      where: { classroomId: { in: ids } },
+      _count: { _all: true },
+    }),
+    db.subject.findMany({
+      where: { classroomId: { in: ids } },
+      select: { id: true, classroomId: true },
+    }),
+  ])
+  const studentCount = new Map(studentGroups.map(g => [g.classroomId, g._count._all]))
+  const subjectCount = new Map(subjectGroups.map(g => [g.classroomId, g._count._all]))
+
+  const subjectIds = subjects.map(s => s.id)
+  const materialGroups = subjectIds.length
+    ? await db.material.groupBy({
+        by: ['subjectId'],
+        where: { subjectId: { in: subjectIds } },
+        _count: { _all: true },
+      })
+    : []
+  const materialBySubject = new Map(materialGroups.map(g => [g.subjectId, g._count._all]))
+  const materialCount = new Map<string, number>()
+  for (const s of subjects) {
+    const cid = s.classroomId ?? ''
+    materialCount.set(cid, (materialCount.get(cid) ?? 0) + (materialBySubject.get(s.id) ?? 0))
+  }
+
+  return classrooms.map(c => ({
+    id: c.id,
+    name: c.name,
+    code: c.code,
+    createdAt: c.createdAt.toISOString(),
+    studentCount: studentCount.get(c.id) ?? 0,
+    subjectCount: subjectCount.get(c.id) ?? 0,
+    materialCount: materialCount.get(c.id) ?? 0,
+  }))
+}
+
+/* ---------- conducted tests (faculty-assigned MockTest groups) ---------- */
+
+export interface ConductedTestRaw {
+  id: string
+  studentId: string
+  subjectId: string
+  totalMarks: number
+  durationMinutes: number
+  status: string
+  questionIds: string
+  assignedTitle: string | null
+  dueDate: Date | null
+  submittedAt: Date | null
+  createdAt: Date
+  result: { percentage: number } | null
+}
+
+/** Key that identifies ONE conducted test instance across its per-student rows. */
+export function conductedTestKey(t: {
+  assignedTitle: string | null
+  subjectId: string
+  createdAt: Date
+}): string {
+  return `${t.assignedTitle ?? ''}|${t.subjectId}|${Math.floor(t.createdAt.getTime() / 60000)}`
+}
+
+/**
+ * Group per-student MockTest rows of conducted tests into ConductedTestRow[].
+ * Tests are grouped by assignedTitle + subject + createdAt minute.
+ */
+export function groupConductedTests(
+  tests: ConductedTestRaw[],
+  studentNameById: Map<string, string>,
+  subjectNameById: Map<string, string>
+): ConductedTestRow[] {
+  const groups = new Map<string, ConductedTestRaw[]>()
+  for (const t of tests) {
+    const key = conductedTestKey(t)
+    const list = groups.get(key) ?? []
+    list.push(t)
+    groups.set(key, list)
+  }
+
+  const rows: ConductedTestRow[] = []
+  for (const list of groups.values()) {
+    const first = list[0]
+    let questionCount = 0
+    try {
+      questionCount = (JSON.parse(first.questionIds) as string[]).length
+    } catch {
+      questionCount = 0
+    }
+    const students: ConductedTestStudentRow[] = list.map(t => ({
+      studentId: t.studentId,
+      name: studentNameById.get(t.studentId) ?? 'Student',
+      status:
+        t.status === 'DRAFT'
+          ? 'not_started'
+          : t.status === 'IN_PROGRESS'
+            ? 'in_progress'
+            : t.status === 'SUBMITTED'
+              ? 'submitted'
+              : 'evaluated',
+      score: t.result ? round1(t.result.percentage) : null,
+      submittedAt: t.submittedAt ? t.submittedAt.toISOString() : null,
+    }))
+    const scored = list.filter(t => t.result)
+    rows.push({
+      id: first.id,
+      title: first.assignedTitle || 'Assigned Test',
+      subject: subjectNameById.get(first.subjectId) ?? 'Unknown',
+      questionCount,
+      totalMarks: first.totalMarks,
+      durationMinutes: first.durationMinutes,
+      createdAt: first.createdAt.toISOString(),
+      dueDate: first.dueDate ? first.dueDate.toISOString() : null,
+      completed: list.filter(t => t.status === 'EVALUATED' || t.status === 'SUBMITTED').length,
+      total: list.length,
+      averageScore: scored.length
+        ? round1(scored.reduce((a, t) => a + (t.result?.percentage ?? 0), 0) / scored.length)
+        : null,
+      students,
+    })
+  }
+  rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return rows
 }

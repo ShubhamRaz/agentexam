@@ -8,6 +8,8 @@ interface RegisterBody {
   name?: string
   email?: string
   password?: string
+  /** optional: STUDENT (default) or FACULTY */
+  role?: string
 }
 
 export async function POST(req: NextRequest) {
@@ -32,6 +34,11 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
   }
 
+  const role = (body.role || 'STUDENT').toUpperCase()
+  if (role !== 'STUDENT' && role !== 'FACULTY') {
+    return Response.json({ error: 'role must be STUDENT or FACULTY' }, { status: 400 })
+  }
+
   const existing = await db.user.findUnique({ where: { email } })
   if (existing) {
     return Response.json({ error: 'An account with this email already exists' }, { status: 409 })
@@ -42,8 +49,9 @@ export async function POST(req: NextRequest) {
       name,
       email,
       passwordHash: hashPassword(password),
-      role: 'STUDENT',
-      examDate: new Date(Date.now() + 45 * 24 * 3600 * 1000), // default: 45 days out
+      role,
+      // faculty accounts have no personal exam countdown
+      examDate: role === 'STUDENT' ? new Date(Date.now() + 45 * 24 * 3600 * 1000) : null,
     },
   })
 

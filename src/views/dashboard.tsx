@@ -18,19 +18,24 @@ import {
 import {
   ArrowRight,
   BookOpen,
+  CalendarCheck,
   Check,
   ChevronRight,
+  ClipboardList,
   Clock,
+  FileText,
   Flame,
   Sparkles,
   Trophy,
+  Upload,
   Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import { useAuth } from '@/lib/auth-context'
-import type { DashboardData, ViewId } from '@/lib/types'
+import type { AssignedTest, DashboardData, Subject, ViewId } from '@/lib/types'
 import {
+  formatDate,
   getGreeting,
   getScoreBarColor,
   getScoreColor,
@@ -55,6 +60,12 @@ const PRIORITY_DOT: Record<string, string> = {
   high: 'bg-red-500',
   medium: 'bg-amber-500',
   low: 'bg-emerald-500',
+}
+
+const ASSIGNED_STATUS: Record<AssignedTest['status'], { label: string; badge: string }> = {
+  DRAFT: { label: 'Pending', badge: 'border-amber-200 bg-amber-50 text-amber-700' },
+  IN_PROGRESS: { label: 'In Progress', badge: 'border-cyan-200 bg-cyan-50 text-cyan-700' },
+  EVALUATED: { label: 'Evaluated', badge: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
 }
 
 /* ---------- skeletons ---------- */
@@ -86,6 +97,8 @@ function DashboardSkeleton() {
 export function DashboardView({ onNavigate }: { onNavigate: (v: ViewId) => void }) {
   const { user } = useAuth()
   const [data, setData] = useState<DashboardData | null>(null)
+  const [subjects, setSubjects] = useState<Subject[] | null>(null)
+  const [assigned, setAssigned] = useState<AssignedTest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -93,8 +106,20 @@ export function DashboardView({ onNavigate }: { onNavigate: (v: ViewId) => void 
     setLoading(true)
     setError(null)
     try {
-      const d = await api.get<DashboardData>('/dashboard')
-      setData(d)
+      // dashboard is the primary payload — subjects/assigned are supplementary
+      const [dashRes, subsRes, assignedRes] = await Promise.allSettled([
+        api.get<DashboardData>('/dashboard'),
+        api.get<Subject[]>('/subjects'),
+        api.get<AssignedTest[]>('/exams/assigned'),
+      ])
+      if (dashRes.status === 'rejected') {
+        throw dashRes.reason instanceof Error
+          ? dashRes.reason
+          : new Error('Failed to load dashboard')
+      }
+      setData(dashRes.value)
+      setSubjects(subsRes.status === 'fulfilled' ? subsRes.value : null)
+      setAssigned(assignedRes.status === 'fulfilled' ? assignedRes.value : [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard')
     } finally {
@@ -156,6 +181,65 @@ export function DashboardView({ onNavigate }: { onNavigate: (v: ViewId) => void 
   const { student, readinessScore, daysLeft, recentTests, recentActivity, todayTasks, weakTopics, subjectPerformance } = data
   const firstName = (user?.name ?? student.name ?? 'Student').split(' ')[0] ?? 'Student'
   const completedCount = todayTasks.filter(t => t.completed).length
+
+  /* fresh account — no subjects, no tests, nothing uploaded yet */
+  const isFreshUser =
+    subjects !== null &&
+    subjects.length === 0 &&
+    readinessScore === 0 &&
+    recentTests.length === 0 &&
+    student.testsCompleted === 0
+
+  if (isFreshUser) {
+    return (
+      <div className="animate-fade-in-up space-y-6">
+        <ViewHeader
+          title={`${getGreeting()}, ${firstName} 👋`}
+          subtitle="Let's set up your AI exam preparation"
+        />
+
+        <div className="animate-fade-in-up stagger-1 relative overflow-hidden rounded-xl bg-gradient-to-br from-violet-950 via-violet-700 to-cyan-600 p-6 text-white shadow-md sm:p-10">
+          <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-28 -left-10 h-48 w-48 rounded-full bg-cyan-300/20 blur-2xl" />
+          <div className="pointer-events-none absolute right-10 top-10 h-16 w-16 rounded-full border border-white/15" />
+          <div className="pointer-events-none absolute right-24 top-24 h-8 w-8 rounded-full bg-white/10" />
+
+          <div className="relative mx-auto max-w-2xl text-center">
+            <span className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/15 px-2.5 py-0.5 text-[11px] font-semibold text-white backdrop-blur">
+              <Sparkles className="h-3 w-3" /> AI exam preparation
+            </span>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+              Welcome to AgentExam 👋
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-white/80 sm:text-base">
+              Your AI exam preparation starts with your materials. Upload your syllabus, notes or
+              PYQs and we&apos;ll build your complete study plan — subjects, question banks, tests.
+            </p>
+
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-[11px] font-medium text-white/80">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 backdrop-blur">
+                <FileText className="h-3 w-3" /> Any format
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 backdrop-blur">
+                <ClipboardList className="h-3 w-3" /> AI question bank
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 backdrop-blur">
+                <CalendarCheck className="h-3 w-3" /> Auto study plan
+              </span>
+            </div>
+
+            <Button
+              size="lg"
+              className="mt-8 h-11 bg-white px-6 text-sm font-semibold text-violet-800 hover:bg-white/90"
+              onClick={() => onNavigate('materials')}
+            >
+              <Upload className="mr-2 h-4 w-4" /> Upload your first material
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // score trend over time from recent evaluated tests (oldest → newest)
   const scoreTrend = [...recentTests]
@@ -255,6 +339,56 @@ export function DashboardView({ onNavigate }: { onNavigate: (v: ViewId) => void 
           iconClassName="bg-cyan-50 text-cyan-600"
         />
       </div>
+
+      {/* Assigned tests from faculty — omitted silently when none */}
+      {assigned.length > 0 && (
+        <SectionCard
+          title="📋 Assigned by your faculty"
+          badge={
+            <Badge variant="outline" className="bg-violet-50 text-[11px] font-medium text-violet-700">
+              {assigned.length} test{assigned.length === 1 ? '' : 's'}
+            </Badge>
+          }
+          contentClassName="p-0"
+          className="animate-fade-in-up stagger-2"
+        >
+          <ul>
+            {assigned.map(test => {
+              const status = ASSIGNED_STATUS[test.status] ?? ASSIGNED_STATUS.DRAFT
+              return (
+                <li
+                  key={test.id}
+                  className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 last:border-b-0 transition-colors hover:bg-slate-50/60 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-slate-800">{test.title}</p>
+                      <Badge variant="outline" className={cn('text-[11px] font-medium', status.badge)}>
+                        {status.label}
+                      </Badge>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-slate-500">
+                      {test.subject} · by {test.assignedByName}
+                      {test.dueDate && <> · due {formatDate(test.dueDate)}</>}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      {test.questionCount} questions · {test.totalMarks} marks ·{' '}
+                      {test.durationMinutes} min
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="h-9 shrink-0 bg-violet-600 text-xs font-semibold hover:bg-violet-700"
+                    onClick={() => onNavigate('exam')}
+                  >
+                    <Zap className="mr-1 h-3.5 w-3.5" /> Start Test
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+        </SectionCard>
+      )}
 
       {/* Today's plan + score trend */}
       <div className="animate-fade-in-up stagger-3 grid grid-cols-1 gap-6 lg:grid-cols-2">

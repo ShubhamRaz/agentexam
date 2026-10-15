@@ -1,0 +1,1038 @@
+     1→'use client'
+     2→
+     3→/* ============================================================
+     4→   AgentExam — Theory Exam view (setup → exam → results machine)
+     5→   Ported from the original React TheoryExam.jsx onto the new
+     6→   stack: shadcn/ui, autosave-to-backend, live countdown, and a
+     7→   full-screen AI evaluation overlay while answers are graded.
+     8→   ============================================================ */
+     9→
+    10→import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+    11→import {
+    12→  ArrowRight,
+    13→  BookOpen,
+    14→  CheckCircle2,
+    15→  ChevronLeft,
+    16→  ChevronRight,
+    17→  Clock,
+    18→  Flag,
+    19→  Loader2,
+    20→  RotateCcw,
+    21→  Send,
+    22→  Sparkles,
+    23→  Zap,
+    24→} from 'lucide-react'
+    25→import { toast } from 'sonner'
+    26→
+    27→import {
+    28→  AlertDialog,
+    29→  AlertDialogAction,
+    30→  AlertDialogCancel,
+    31→  AlertDialogContent,
+    32→  AlertDialogDescription,
+    33→  AlertDialogFooter,
+    34→  AlertDialogHeader,
+    35→  AlertDialogTitle,
+    36→} from '@/components/ui/alert-dialog'
+    37→import { Badge } from '@/components/ui/badge'
+    38→import { Button } from '@/components/ui/button'
+    39→import { Card, CardContent } from '@/components/ui/card'
+    40→import { Label } from '@/components/ui/label'
+    41→import { Progress } from '@/components/ui/progress'
+    42→import {
+    43→  Select,
+    44→  SelectContent,
+    45→  SelectItem,
+    46→  SelectTrigger,
+    47→  SelectValue,
+    48→} from '@/components/ui/select'
+    49→import { Textarea } from '@/components/ui/textarea'
+    50→import { AICard, ErrorCard, LoadingCard, ProgressCircle, ViewHeader } from '@/components/app/bits'
+    51→import { api } from '@/lib/api-client'
+    52→import { formatClock, questionTypeLabel } from '@/lib/helpers'
+    53→import { cn } from '@/lib/utils'
+    54→import type {
+    55→  ExamQuestion,
+    56→  ExamResult,
+    57→  ExamStartResponse,
+    58→  QuestionType,
+    59→  Subject,
+    60→  ViewId,
+    61→} from '@/lib/types'
+    62→
+    63→/* ---------- shared constants ---------- */
+    64→
+    65→type Phase = 'setup' | 'exam' | 'results'
+    66→
+    67→interface ExamConfig {
+    68→  subjectId: string
+    69→  subjectName: string
+    70→  difficulty: 'EASY' | 'MEDIUM' | 'HARD' | 'MIXED'
+    71→  questionCount: number
+    72→  durationMinutes: number
+    73→}
+    74→
+    75→const DIFFICULTIES: { value: ExamConfig['difficulty']; label: string }[] = [
+    76→  { value: 'EASY', label: 'Easy' },
+    77→  { value: 'MEDIUM', label: 'Medium' },
+    78→  { value: 'HARD', label: 'Hard' },
+    79→  { value: 'MIXED', label: 'Mixed' },
+    80→]
+    81→
+    82→const QUESTION_COUNTS = [5, 10, 15, 20]
+    83→const DURATIONS = [15, 30, 45, 60]
+    84→
+    85→const TYPE_BADGE: Record<QuestionType, string> = {
+    86→  MCQ: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+    87→  SHORT_ANSWER: 'border-amber-200 bg-amber-50 text-amber-700',
+    88→  LONG_ANSWER: 'border-violet-200 bg-violet-50 text-violet-700',
+    89→}
+    90→
+    91→const EVAL_STEPS = [
+    92→  'Grading objective answers',
+    93→  'Evaluating written answers',
+    94→  'Generating improvement suggestions',
+    95→]
+    96→
+    97→const DEBOUNCE_MS = 800
+    98→
+    99→/* ============================================================
+   100→   Main view
+   101→   ============================================================ */
+   102→
+   103→export function TheoryExamView({ onNavigate }: { onNavigate: (v: ViewId) => void }) {
+   104→  const [phase, setPhase] = useState<Phase>('setup')
+   105→  const [subjects, setSubjects] = useState<Subject[]>([])
+   106→  const [subjectsLoading, setSubjectsLoading] = useState(true)
+   107→  const [subjectsError, setSubjectsError] = useState<string | null>(null)
+   108→
+   109→  const [config, setConfig] = useState<ExamConfig | null>(null)
+   110→  const [exam, setExam] = useState<ExamStartResponse | null>(null)
+   111→  const [totalMarks, setTotalMarks] = useState(0)
+   112→  const [result, setResult] = useState<ExamResult | null>(null)
+   113→  const [creating, setCreating] = useState(false)
+   114→
+   115→  const loadSubjects = useCallback(() => {
+   116→    setSubjectsLoading(true)
+   117→    setSubjectsError(null)
+   118→    api
+   119→      .get<Subject[]>('/subjects')
+   120→      .then(data => setSubjects(data || []))
+   121→      .catch(err => setSubjectsError(err instanceof Error ? err.message : 'Failed to load subjects'))
+   122→      .finally(() => setSubjectsLoading(false))
+   123→  }, [])
+   124→
+   125→  useEffect(() => {
+   126→    loadSubjects()
+   127→  }, [loadSubjects])
+   128→
+   129→  /* create + start the exam, then move to the exam phase */
+   130→  const handleStart = useCallback(async (cfg: ExamConfig) => {
+   131→    setCreating(true)
+   132→    try {
+   133→      const created = await api.post<{ id: string; total_marks: number; question_count: number }>(
+   134→        '/exams',
+   135→        {
+   136→          subject_id: cfg.subjectId,
+   137→          difficulty: cfg.difficulty,
+   138→          question_count: cfg.questionCount,
+   139→          duration_minutes: cfg.durationMinutes,
+   140→        }
+   141→      )
+   142→      const started = await api.post<ExamStartResponse>(`/exams/${created.id}/start`)
+   143→      setConfig(cfg)
+   144→      setExam(started)
+   145→      setTotalMarks(created.total_marks)
+   146→      setPhase('exam')
+   147→    } catch (err) {
+   148→      toast.error(err instanceof Error ? err.message : 'Failed to start the exam. Please try again.')
+   149→    } finally {
+   150→      setCreating(false)
+   151→    }
+   152→  }, [])
+   153→
+   154→  const handleExamFinished = useCallback((res: ExamResult) => {
+   155→    setResult(res)
+   156→    setPhase('results')
+   157→  }, [])
+   158→
+   159→  const restart = useCallback(() => {
+   160→    setResult(null)
+   161→    setExam(null)
+   162→    setTotalMarks(0)
+   163→    setPhase('setup')
+   164→  }, [])
+   165→
+   166→  /* ---------- exam phase ---------- */
+   167→  if (phase === 'exam' && exam && config) {
+   168→    return (
+   169→      <div className="animate-fade-in-up space-y-6">
+   170→        <ActiveExam exam={exam} config={config} totalMarks={totalMarks} onFinished={handleExamFinished} />
+   171→      </div>
+   172→    )
+   173→  }
+   174→
+   175→  /* ---------- results phase ---------- */
+   176→  if (phase === 'results' && result && config) {
+   177→    return (
+   178→      <div className="animate-fade-in-up space-y-6">
+   179→        <ViewHeader title="Exam Results" subtitle={`${config.subjectName} — AI-evaluated mock test`} />
+   180→        <ExamResults
+   181→          result={result}
+   182→          questions={exam?.questions ?? []}
+   183→          onRestart={restart}
+   184→          onPerformance={() => onNavigate('performance')}
+   185→        />
+   186→      </div>
+   187→    )
+   188→  }
+   189→
+   190→  /* ---------- setup phase (default) ---------- */
+   191→  return (
+   192→    <div className="animate-fade-in-up space-y-6">
+   193→      <ViewHeader
+   194→        title="Theory Exam"
+   195→        subtitle="AI-graded mock tests — objective answers scored instantly, written answers evaluated by your AI examiner"
+   196→      />
+   197→      {subjectsError ? (
+   198→        <ErrorCard message={subjectsError} onRetry={loadSubjects} />
+   199→      ) : (
+   200→        <ExamSetup
+   201→          subjects={subjects}
+   202→          subjectsLoading={subjectsLoading}
+   203→          creating={creating}
+   204→          onStart={handleStart}
+   205→        />
+   206→      )}
+   207→    </div>
+   208→  )
+   209→}
+   210→
+   211→/* ============================================================
+   212→   Phase 1 — setup card
+   213→   ============================================================ */
+   214→
+   215→function ExamSetup({
+   216→  subjects,
+   217→  subjectsLoading,
+   218→  creating,
+   219→  onStart,
+   220→}: {
+   221→  subjects: Subject[]
+   222→  subjectsLoading: boolean
+   223→  creating: boolean
+   224→  onStart: (config: ExamConfig) => void
+   225→}) {
+   226→  const [subjectId, setSubjectId] = useState('')
+   227→  const [difficulty, setDifficulty] = useState<ExamConfig['difficulty']>('MEDIUM')
+   228→  const [questionCount, setQuestionCount] = useState(10)
+   229→  const [duration, setDuration] = useState(30)
+   230→
+   231→  const canStart = !!subjectId && !creating && !subjectsLoading
+   232→
+   233→  return (
+   234→    <Card className="mx-auto w-full max-w-xl shadow-xs">
+   235→      <CardContent className="p-6 sm:p-8">
+   236→        <div className="mb-8 text-center">
+   237→          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
+   238→            <BookOpen className="h-8 w-8" />
+   239→          </div>
+   240→          <h2 className="text-xl font-bold text-slate-900">Start Theory Exam</h2>
+   241→          <p className="mt-1 text-sm text-slate-500">Configure your practice test and face the AI examiner.</p>
+   242→        </div>
+   243→
+   244→        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   245→          <div className="space-y-2">
+   246→            <Label htmlFor="exam-subject">Subject *</Label>
+   247→            <Select value={subjectId} onValueChange={setSubjectId} disabled={subjectsLoading}>
+   248→              <SelectTrigger id="exam-subject" className="w-full">
+   249→                <SelectValue placeholder={subjectsLoading ? 'Loading subjects…' : 'Choose a subject'} />
+   250→              </SelectTrigger>
+   251→              <SelectContent>
+   252→                {subjects.map(s => (
+   253→                  <SelectItem key={s.id} value={s.id}>
+   254→                    {s.name}
+   255→                  </SelectItem>
+   256→                ))}
+   257→              </SelectContent>
+   258→            </Select>
+   259→          </div>
+   260→
+   261→          <div className="space-y-2">
+   262→            <Label htmlFor="exam-difficulty">Difficulty</Label>
+   263→            <Select value={difficulty} onValueChange={v => setDifficulty(v as ExamConfig['difficulty'])}>
+   264→              <SelectTrigger id="exam-difficulty" className="w-full">
+   265→                <SelectValue />
+   266→              </SelectTrigger>
+   267→              <SelectContent>
+   268→                {DIFFICULTIES.map(d => (
+   269→                  <SelectItem key={d.value} value={d.value}>
+   270→                    {d.label}
+   271→                  </SelectItem>
+   272→                ))}
+   273→              </SelectContent>
+   274→            </Select>
+   275→          </div>
+   276→
+   277→          <div className="space-y-2">
+   278→            <Label htmlFor="exam-count">Number of Questions</Label>
+   279→            <Select value={String(questionCount)} onValueChange={v => setQuestionCount(Number(v))}>
+   280→              <SelectTrigger id="exam-count" className="w-full">
+   281→                <SelectValue />
+   282→              </SelectTrigger>
+   283→              <SelectContent>
+   284→                {QUESTION_COUNTS.map(n => (
+   285→                  <SelectItem key={n} value={String(n)}>
+   286→                    {n} Questions
+   287→                  </SelectItem>
+   288→                ))}
+   289→              </SelectContent>
+   290→            </Select>
+   291→          </div>
+   292→
+   293→          <div className="space-y-2">
+   294→            <Label htmlFor="exam-duration">Duration</Label>
+   295→            <Select value={String(duration)} onValueChange={v => setDuration(Number(v))}>
+   296→              <SelectTrigger id="exam-duration" className="w-full">
+   297→                <SelectValue />
+   298→              </SelectTrigger>
+   299→              <SelectContent>
+   300→                {DURATIONS.map(m => (
+   301→                  <SelectItem key={m} value={String(m)}>
+   302→                    {m} minutes
+   303→                  </SelectItem>
+   304→                ))}
+   305→              </SelectContent>
+   306→            </Select>
+   307→          </div>
+   308→        </div>
+   309→
+   310→        <p className="mt-4 text-center text-xs text-slate-400">
+   311→          A paper of {questionCount} questions will be generated — total marks shown once it&apos;s created.
+   312→        </p>
+   313→
+   314→        <Button
+   315→          className="mt-5 h-11 w-full bg-violet-600 text-sm font-semibold hover:bg-violet-700"
+   316→          disabled={!canStart}
+   317→          onClick={() =>
+   318→            onStart({
+   319→              subjectId,
+   320→              subjectName: subjects.find(s => s.id === subjectId)?.name ?? 'Exam',
+   321→              difficulty,
+   322→              questionCount,
+   323→              durationMinutes: duration,
+   324→            })
+   325→          }
+   326→        >
+   327→          {creating ? (
+   328→            <Loader2 className="h-4 w-4 animate-spin" />
+   329→          ) : (
+   330→            <Zap className="h-4 w-4" />
+   331→          )}
+   332→          {creating ? 'Creating your exam…' : 'Start Exam'}
+   333→        </Button>
+   334→      </CardContent>
+   335→    </Card>
+   336→  )
+   337→}
+   338→
+   339→/* ============================================================
+   340→   Phase 2 — active exam
+   341→   ============================================================ */
+   342→
+   343→function ActiveExam({
+   344→  exam,
+   345→  config,
+   346→  totalMarks,
+   347→  onFinished,
+   348→}: {
+   349→  exam: ExamStartResponse
+   350→  config: ExamConfig
+   351→  totalMarks: number
+   352→  onFinished: (result: ExamResult) => void
+   353→}) {
+   354→  const questions = exam.questions
+   355→
+   356→  /* answers: questionId → selected option id (MCQ) or answer text */
+   357→  const [answers, setAnswers] = useState<Record<string, string>>(() => {
+   358→    const initial: Record<string, string> = {}
+   359→    for (const saved of exam.saved_answers) {
+   360→      const value = saved.selected_option_id ?? saved.answer_text ?? ''
+   361→      if (value) initial[saved.question_id] = value
+   362→    }
+   363→    return initial
+   364→  })
+   365→  const [marked, setMarked] = useState<Set<string>>(new Set())
+   366→  const [current, setCurrent] = useState(0)
+   367→  const [secondsLeft, setSecondsLeft] = useState(config.durationMinutes * 60)
+   368→  const [showConfirm, setShowConfirm] = useState(false)
+   369→  const [submitting, setSubmitting] = useState(false)
+   370→  const [evalStep, setEvalStep] = useState(0)
+   371→
+   372→  /* refs to dodge stale closures in timers + submit guard */
+   373→  const submittingRef = useRef(false)
+   374→  const timeUpRef = useRef(false)
+   375→  const pendingRef = useRef<{ qid: string; text: string } | null>(null)
+   376→  const debounceRef = useRef<number | null>(null)
+   377→  const stepTimersRef = useRef<number[]>([])
+   378→  const submitRef = useRef<() => void>(() => {})
+   379→
+   380→  const question = questions[current]
+   381→  const total = questions.length
+   382→
+   383→  const isAnswered = useCallback(
+   384→    (q: ExamQuestion) => {
+   385→      const a = answers[q.id]
+   386→      if (a === undefined) return false
+   387→      return q.question_type === 'MCQ' ? a !== '' : a.trim() !== ''
+   388→    },
+   389→    [answers]
+   390→  )
+   391→  const answeredCount = questions.filter(isAnswered).length
+   392→  const unanswered = total - answeredCount
+   393→
+   394→  /* ---------- autosave (fire-and-forget) ---------- */
+   395→
+   396→  const flushPending = useCallback(async () => {
+   397→    if (debounceRef.current !== null) {
+   398→      window.clearTimeout(debounceRef.current)
+   399→      debounceRef.current = null
+   400→    }
+   401→    const pending = pendingRef.current
+   402→    pendingRef.current = null
+   403→    if (pending) {
+   404→      try {
+   405→        await api.put(`/exams/${exam.id}/answers/${pending.qid}`, { answer_text: pending.text })
+   406→      } catch (err) {
+   407→        console.error('Failed to save answer', err)
+   408→      }
+   409→    }
+   410→  }, [exam.id])
+   411→
+   412→  const handleTextChange = (qid: string, value: string) => {
+   413→    setAnswers(prev => ({ ...prev, [qid]: value }))
+   414→    pendingRef.current = { qid, text: value }
+   415→    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current)
+   416→    debounceRef.current = window.setTimeout(() => {
+   417→      const pending = pendingRef.current
+   418→      pendingRef.current = null
+   419→      debounceRef.current = null
+   420→      if (pending) {
+   421→        api
+   422→          .put(`/exams/${exam.id}/answers/${pending.qid}`, { answer_text: pending.text })
+   423→          .catch(err => console.error('Failed to save answer', err))
+   424→      }
+   425→    }, DEBOUNCE_MS)
+   426→  }
+   427→
+   428→  const selectOption = (qid: string, optionId: string) => {
+   429→    setAnswers(prev => ({ ...prev, [qid]: optionId }))
+   430→    api
+   431→      .put(`/exams/${exam.id}/answers/${qid}`, { selected_option_id: optionId })
+   432→      .catch(err => console.error('Failed to save answer', err))
+   433→  }
+   434→
+   435→  /* flush any pending debounced text when navigating between questions or unmounting */
+   436→  useEffect(() => {
+   437→    return () => {
+   438→      void flushPending()
+   439→    }
+   440→  }, [current, flushPending])
+   441→
+   442→  /* ---------- submit (manual or on timer expiry) ---------- */
+   443→
+   444→  const submitExam = useCallback(async () => {
+   445→    if (submittingRef.current) return
+   446→    submittingRef.current = true
+   447→    setSubmitting(true)
+   448→    setShowConfirm(false)
+   449→    setEvalStep(0)
+   450→    stepTimersRef.current = [
+   451→      window.setTimeout(() => setEvalStep(1), 2600),
+   452→      window.setTimeout(() => setEvalStep(2), 9000),
+   453→    ]
+   454→    try {
+   455→      await flushPending()
+   456→      const res = await api.post<ExamResult>(`/exams/${exam.id}/submit`)
+   457→      stepTimersRef.current.forEach(t => window.clearTimeout(t))
+   458→      stepTimersRef.current = []
+   459→      setEvalStep(EVAL_STEPS.length)
+   460→      await new Promise(r => window.setTimeout(r, 900))
+   461→      onFinished(res)
+   462→    } catch (err) {
+   463→      stepTimersRef.current.forEach(t => window.clearTimeout(t))
+   464→      stepTimersRef.current = []
+   465→      submittingRef.current = false
+   466→      setSubmitting(false)
+   467→      setEvalStep(0)
+   468→      toast.error(err instanceof Error ? err.message : 'Failed to submit the exam. Please try again.')
+   469→    }
+   470→  }, [exam.id, flushPending, onFinished])
+   471→
+   472→  useEffect(() => {
+   473→    submitRef.current = () => void submitExam()
+   474→  }, [submitExam])
+   475→
+   476→  /* countdown — paused while the AI evaluation overlay is up */
+   477→  useEffect(() => {
+   478→    if (submitting) return
+   479→    const t = window.setInterval(() => {
+   480→      setSecondsLeft(s => Math.max(0, s - 1))
+   481→    }, 1000)
+   482→    return () => window.clearInterval(t)
+   483→  }, [submitting])
+   484→
+   485→  /* auto-submit on expiry */
+   486→  useEffect(() => {
+   487→    if (secondsLeft === 0 && !timeUpRef.current) {
+   488→      timeUpRef.current = true
+   489→      toast.info("Time's up — submitting your test for evaluation.")
+   490→      submitRef.current()
+   491→    }
+   492→  }, [secondsLeft])
+   493→
+   494→  /* cleanup pending timers on unmount */
+   495→  useEffect(() => {
+   496→    return () => {
+   497→      stepTimersRef.current.forEach(t => window.clearTimeout(t))
+   498→      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current)
+   499→    }
+   500→  }, [])
+   501→
+   502→  const toggleMark = (qid: string) => {
+   503→    setMarked(prev => {
+   504→      const next = new Set(prev)
+   505→      if (next.has(qid)) next.delete(qid)
+   506→      else next.add(qid)
+   507→      return next
+   508→    })
+   509→  }
+   510→
+   511→  if (!question || total === 0) {
+   512→    return (
+   513→      <div className="animate-fade-in-up space-y-6">
+   514→        <ViewHeader title="Theory Exam" subtitle="No questions available for this configuration." />
+   515→        <ErrorCard message="This paper has no questions. Go back and try another subject or difficulty." />
+   516→      </div>
+   517→    )
+   518→  }
+   519→
+   520→  const timerDanger = secondsLeft < 60
+   521→  const timerWarn = !timerDanger && secondsLeft < 300
+   522→
+   523→  return (
+   524→    <div className="space-y-6">
+   525→      {/* sticky exam header — acts as this phase's view header */}
+   526→      <div className="sticky top-0 z-30 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-xs backdrop-blur">
+   527→        <div className="flex flex-wrap items-center justify-between gap-3">
+   528→          <div className="min-w-0">
+   529→            <h2 className="truncate text-base font-bold text-slate-900 sm:text-lg">
+   530→              {config.subjectName} — Mock Test
+   531→            </h2>
+   532→            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+   533→              <Badge variant="outline" className="text-[11px] font-medium text-slate-600">
+   534→                Question {current + 1} of {total}
+   535→              </Badge>
+   536→              {totalMarks > 0 && (
+   537→                <Badge variant="outline" className="text-[11px] font-medium text-slate-600">
+   538→                  {totalMarks} marks
+   539→                </Badge>
+   540→              )}
+   541→            </div>
+   542→          </div>
+   543→          <div className="flex items-center gap-2.5">
+   544→            <div
+   545→              className={cn(
+   546→                'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-bold tabular-nums',
+   547→                timerDanger && 'timer-danger border-red-200 bg-red-50 text-red-600',
+   548→                timerWarn && 'border-amber-200 bg-amber-50 text-amber-700',
+   549→                !timerDanger && !timerWarn && 'border-slate-200 bg-white text-slate-700'
+   550→              )}
+   551→              aria-live="polite"
+   552→            >
+   553→              <Clock className="h-4 w-4" />
+   554→              {formatClock(secondsLeft)}
+   555→            </div>
+   556→            <Button
+   557→              size="sm"
+   558→              className="bg-red-600 text-white hover:bg-red-700"
+   559→              disabled={submitting}
+   560→              onClick={() => setShowConfirm(true)}
+   561→            >
+   562→              <Send className="h-3.5 w-3.5" /> Submit Test
+   563→            </Button>
+   564→          </div>
+   565→        </div>
+   566→      </div>
+   567→
+   568→      <div className="flex flex-col gap-6 lg:flex-row">
+   569→        {/* main column */}
+   570→        <div className="min-w-0 flex-1 space-y-6">
+   571→          {/* compact progress for mobile (palette is desktop-only) */}
+   572→          <div className="lg:hidden">
+   573→            <div className="flex items-center justify-between text-xs text-slate-500">
+   574→              <span>
+   575→                Question {current + 1} of {total}
+   576→                {marked.size > 0 && <span className="ml-2 text-amber-600">· {marked.size} marked</span>}
+   577→              </span>
+   578→              <span className="font-semibold text-violet-600">
+   579→                {answeredCount}/{total} answered
+   580→              </span>
+   581→            </div>
+   582→            <Progress className="mt-1.5 h-1.5" value={(answeredCount / total) * 100} />
+   583→          </div>
+   584→
+   585→          {/* question card */}
+   586→          <Card className="shadow-xs">
+   587→            <CardContent className="p-5 sm:p-6">
+   588→              <div className="mb-4 flex flex-wrap items-center gap-2">
+   589→                <span className="text-sm font-bold text-slate-900">Question {current + 1}</span>
+   590→                <Badge variant="outline" className={cn('text-[11px] font-semibold', TYPE_BADGE[question.question_type])}>
+   591→                  {questionTypeLabel(question.question_type)}
+   592→                </Badge>
+   593→                <Badge variant="outline" className="text-[11px] font-medium text-slate-500">
+   594→                  {question.marks} {question.marks === 1 ? 'mark' : 'marks'}
+   595→                </Badge>
+   596→                {marked.has(question.id) && (
+   597→                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[11px] font-medium text-amber-700">
+   598→                    <Flag className="h-3 w-3" /> Marked
+   599→                  </Badge>
+   600→                )}
+   601→              </div>
+   602→
+   603→              <p className="mb-6 whitespace-pre-line text-lg font-medium leading-relaxed text-slate-900">
+   604→                {question.question_text}
+   605→              </p>
+   606→
+   607→              {/* answer area */}
+   608→              {question.question_type === 'MCQ' && (
+   609→                <div className="space-y-3">
+   610→                  {question.options.map((opt, i) => {
+   611→                    const selected = answers[question.id] === opt.id
+   612→                    return (
+   613→                      <button
+   614→                        key={opt.id}
+   615→                        type="button"
+   616→                        disabled={submitting}
+   617→                        onClick={() => selectOption(question.id, opt.id)}
+   618→                        className={cn(
+   619→                          'flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-all',
+   620→                          selected
+   621→                            ? 'border-violet-600 bg-violet-50 shadow-xs'
+   622→                            : 'border-slate-200 bg-white hover:border-violet-300 hover:bg-violet-50/40'
+   623→                        )}
+   624→                        aria-pressed={selected}
+   625→                      >
+   626→                        <span
+   627→                          className={cn(
+   628→                            'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors',
+   629→                            selected
+   630→                              ? 'border-violet-600 bg-violet-600 text-white'
+   631→                              : 'border-slate-300 text-slate-500'
+   632→                          )}
+   633→                        >
+   634→                          {String.fromCharCode(65 + i)}
+   635→                        </span>
+   636→                        <span className="flex-1 text-sm leading-relaxed text-slate-700">{opt.text}</span>
+   637→                      </button>
+   638→                    )
+   639→                  })}
+   640→                </div>
+   641→              )}
+   642→
+   643→              {question.question_type === 'SHORT_ANSWER' && (
+   644→                <Textarea
+   645→                  rows={4}
+   646→                  value={answers[question.id] ?? ''}
+   647→                  onChange={e => handleTextChange(question.id, e.target.value)}
+   648→                  placeholder="Type your answer here…"
+   649→                  className="min-h-24"
+   650→                  disabled={submitting}
+   651→                />
+   652→              )}
+   653→
+   654→              {question.question_type === 'LONG_ANSWER' && (
+   655→                <Textarea
+   656→                  rows={10}
+   657→                  value={answers[question.id] ?? ''}
+   658→                  onChange={e => handleTextChange(question.id, e.target.value)}
+   659→                  placeholder="Write your detailed answer here…"
+   660→                  className="min-h-48"
+   661→                  disabled={submitting}
+   662→                />
+   663→              )}
+   664→
+   665→              {/* navigation */}
+   666→              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
+   667→                <Button
+   668→                  variant="ghost"
+   669→                  size="sm"
+   670→                  disabled={current === 0 || submitting}
+   671→                  onClick={() => setCurrent(c => c - 1)}
+   672→                >
+   673→                  <ChevronLeft className="h-4 w-4" /> Previous
+   674→                </Button>
+   675→                <Button
+   676→                  variant="ghost"
+   677→                  size="sm"
+   678→                  disabled={submitting}
+   679→                  onClick={() => toggleMark(question.id)}
+   680→                  className={cn(
+   681→                    'text-slate-500',
+   682→                    marked.has(question.id) && 'text-amber-600 hover:bg-amber-50 hover:text-amber-700'
+   683→                  )}
+   684→                >
+   685→                  <Flag className="h-4 w-4" />
+   686→                  {marked.has(question.id) ? 'Marked for Review' : 'Mark for Review'}
+   687→                </Button>
+   688→                {current < total - 1 ? (
+   689→                  <Button
+   690→                    size="sm"
+   691→                    className="bg-violet-600 hover:bg-violet-700"
+   692→                    disabled={submitting}
+   693→                    onClick={() => setCurrent(c => c + 1)}
+   694→                  >
+   695→                    Next <ChevronRight className="h-4 w-4" />
+   696→                  </Button>
+   697→                ) : (
+   698→                  <Button
+   699→                    size="sm"
+   700→                    className="bg-emerald-600 hover:bg-emerald-700"
+   701→                    disabled={submitting}
+   702→                    onClick={() => setShowConfirm(true)}
+   703→                  >
+   704→                    <Send className="h-3.5 w-3.5" /> Submit Test
+   705→                  </Button>
+   706→                )}
+   707→              </div>
+   708→            </CardContent>
+   709→          </Card>
+   710→        </div>
+   711→
+   712→        {/* question palette — desktop only */}
+   713→        <aside className="hidden lg:block">
+   714→          <div className="sticky top-24 w-64 shrink-0">
+   715→            <Card className="shadow-xs">
+   716→              <CardContent className="space-y-4 p-5">
+   717→                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Questions</h3>
+   718→                <div className="grid grid-cols-5 gap-2">
+   719→                  {questions.map((q, i) => {
+   720→                    const isCurrent = i === current
+   721→                    const isMarked = marked.has(q.id)
+   722→                    const answered = isAnswered(q)
+   723→                    return (
+   724→                      <button
+   725→                        key={q.id}
+   726→                        type="button"
+   727→                        onClick={() => setCurrent(i)}
+   728→                        className={cn(
+   729→                          'h-9 rounded-lg border text-sm font-semibold transition-colors',
+   730→                          isCurrent
+   731→                            ? 'border-violet-600 bg-violet-600 text-white shadow-xs'
+   732→                            : isMarked
+   733→                              ? 'border-amber-300 bg-amber-100 text-amber-700 hover:border-amber-400'
+   734→                              : answered
+   735→                                ? 'border-emerald-200 bg-emerald-100 text-emerald-700 hover:border-emerald-300'
+   736→                                : 'border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:text-violet-600'
+   737→                        )}
+   738→                      >
+   739→                        {i + 1}
+   740→                      </button>
+   741→                    )
+   742→                  })}
+   743→                </div>
+   744→
+   745→                <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-4 text-xs text-slate-500">
+   746→                  <span className="flex items-center gap-2">
+   747→                    <span className="h-3 w-3 rounded-sm bg-violet-600" /> Current
+   748→                  </span>
+   749→                  <span className="flex items-center gap-2">
+   750→                    <span className="h-3 w-3 rounded-sm border border-emerald-300 bg-emerald-100" /> Answered
+   751→                  </span>
+   752→                  <span className="flex items-center gap-2">
+   753→                    <span className="h-3 w-3 rounded-sm border border-amber-300 bg-amber-100" /> Marked
+   754→                  </span>
+   755→                  <span className="flex items-center gap-2">
+   756→                    <span className="h-3 w-3 rounded-sm border border-slate-200 bg-white" /> Not visited
+   757→                  </span>
+   758→                </div>
+   759→
+   760→                <div className="border-t border-slate-100 pt-4">
+   761→                  <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
+   762→                    <span>Progress</span>
+   763→                    <span className="font-semibold text-slate-700">
+   764→                      {answeredCount}/{total} answered
+   765→                    </span>
+   766→                  </div>
+   767→                  <Progress className="h-2" value={(answeredCount / total) * 100} />
+   768→                </div>
+   769→              </CardContent>
+   770→            </Card>
+   771→          </div>
+   772→        </aside>
+   773→      </div>
+   774→
+   775→      {/* submit confirmation */}
+   776→      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
+   777→        <AlertDialogContent>
+   778→          <AlertDialogHeader>
+   779→            <AlertDialogTitle>Submit test for AI evaluation?</AlertDialogTitle>
+   780→            <AlertDialogDescription>
+   781→              You&apos;ve answered {answeredCount} of {total} questions
+   782→              {unanswered > 0 ? ` — ${unanswered} will be marked unattempted` : ' — all questions answered!'}. The AI
+   783→              examiner takes up to ~30 seconds to grade your written answers.
+   784→            </AlertDialogDescription>
+   785→          </AlertDialogHeader>
+   786→          <AlertDialogFooter>
+   787→            <AlertDialogCancel disabled={submitting}>Keep Working</AlertDialogCancel>
+   788→            <AlertDialogAction
+   789→              className="bg-violet-600 text-white hover:bg-violet-700"
+   790→              onClick={() => submitRef.current()}
+   791→            >
+   792→              <Send className="h-3.5 w-3.5" /> Submit for Evaluation
+   793→            </AlertDialogAction>
+   794→          </AlertDialogFooter>
+   795→        </AlertDialogContent>
+   796→      </AlertDialog>
+   797→
+   798→      {/* full-screen AI evaluation overlay */}
+   799→      {submitting && <EvaluatingOverlay step={evalStep} />}
+   800→    </div>
+   801→  )
+   802→}
+   803→
+   804→/* ---------- AI evaluation overlay ---------- */
+   805→
+   806→function EvaluatingOverlay({ step }: { step: number }) {
+   807→  return (
+   808→    <div
+   809→      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+   810→      role="dialog"
+   811→      aria-modal="true"
+   812→      aria-label="AI evaluation in progress"
+   813→    >
+   814→      <div className="w-full max-w-md animate-fade-in-up rounded-2xl bg-gradient-to-br from-violet-600 via-violet-700 to-violet-800 p-8 text-center shadow-2xl">
+   815→        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/15">
+   816→          <Loader2 className="h-8 w-8 animate-spin text-white" />
+   817→        </div>
+   818→        <h3 className="mt-5 text-lg font-bold text-white">AI Examiner is evaluating your answers…</h3>
+   819→        <p className="mt-1 text-sm text-violet-100">Objective answers score instantly — written ones take a little longer.</p>
+   820→        <div className="mt-6 space-y-2.5 text-left">
+   821→          {EVAL_STEPS.map((label, i) => {
+   822→            const done = step > i
+   823→            const active = step === i
+   824→            return (
+   825→              <div
+   826→                key={label}
+   827→                className={cn(
+   828→                  'flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm transition-colors',
+   829→                  done || active ? 'bg-white/15' : 'bg-white/5'
+   830→                )}
+   831→              >
+   832→                {done ? (
+   833→                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" />
+   834→                ) : active ? (
+   835→                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-white" />
+   836→                ) : (
+   837→                  <span className="h-4 w-4 shrink-0 rounded-full border border-white/30" />
+   838→                )}
+   839→                <span className={done ? 'text-white' : active ? 'font-medium text-white' : 'text-violet-200'}>
+   840→                  {label}
+   841→                </span>
+   842→              </div>
+   843→            )
+   844→          })}
+   845→        </div>
+   846→      </div>
+   847→    </div>
+   848→  )
+   849→}
+   850→
+   851→/* ============================================================
+   852→   Phase 3 — results
+   853→   ============================================================ */
+   854→
+   855→function ExamResults({
+   856→  result,
+   857→  questions,
+   858→  onRestart,
+   859→  onPerformance,
+   860→}: {
+   861→  result: ExamResult
+   862→  questions: ExamQuestion[]
+   863→  onRestart: () => void
+   864→  onPerformance: () => void
+   865→}) {
+   866→  const questionById = useMemo(() => new Map(questions.map(q => [q.id, q])), [questions])
+   867→
+   868→  const optionLabel = (qid: string, optionId: string | null): string => {
+   869→    if (!optionId) return '—'
+   870→    const q = questionById.get(qid)
+   871→    const idx = q ? q.options.findIndex(o => o.id === optionId) : -1
+   872→    return idx >= 0 ? `(${String.fromCharCode(65 + idx)})` : '(?)'
+   873→  }
+   874→
+   875→  const optionText = (qid: string, optionId: string | null): string => {
+   876→    if (!optionId) return '—'
+   877→    return questionById.get(qid)?.options.find(o => o.id === optionId)?.text ?? '—'
+   878→  }
+   879→
+   880→  const gradeStyle = (grade: string): string => {
+   881→    switch (grade) {
+   882→      case 'A':
+   883→        return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+   884→      case 'B':
+   885→        return 'border-cyan-200 bg-cyan-50 text-cyan-700'
+   886→      case 'C':
+   887→        return 'border-amber-200 bg-amber-50 text-amber-700'
+   888→      case 'D':
+   889→        return 'border-orange-200 bg-orange-50 text-orange-700'
+   890→      default:
+   891→        return 'border-red-200 bg-red-50 text-red-700'
+   892→    }
+   893→  }
+   894→
+   895→  return (
+   896→    <>
+   897→      {/* score card */}
+   898→      <Card className="shadow-xs">
+   899→        <CardContent className="p-6 text-center sm:p-8">
+   900→          <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" />
+   901→          <h2 className="mt-4 text-2xl font-bold text-slate-900">Test Completed!</h2>
+   902→          <p className="mt-1 text-sm text-slate-500">{result.subject} — Mock Test</p>
+   903→          <div className="mt-6 flex justify-center">
+   904→            <ProgressCircle value={result.percentage} size={140} strokeWidth={10} />
+   905→          </div>
+   906→          <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
+   907→            <Badge variant="outline" className="px-3 py-1 text-sm font-bold tabular-nums text-slate-700">
+   908→              {result.obtained_marks} / {result.total_marks} marks
+   909→            </Badge>
+   910→            <Badge variant="outline" className={cn('px-3 py-1 text-sm font-bold', gradeStyle(result.grade))}>
+   911→              Grade {result.grade}
+   912→            </Badge>
+   913→          </div>
+   914→        </CardContent>
+   915→      </Card>
+   916→
+   917→      {/* AI feedback */}
+   918→      {result.analytics && (
+   919→        <AICard title="AI Feedback" icon={Sparkles}>
+   920→          <p className="whitespace-pre-line">{result.analytics.improvement_suggestions}</p>
+   921→          {result.analytics.weak_areas.length > 0 && (
+   922→            <div className="mt-4 flex flex-wrap items-center gap-1.5">
+   923→              <span className="text-xs font-semibold text-slate-500">Focus areas:</span>
+   924→              {result.analytics.weak_areas.map(area => (
+   925→                <Badge
+   926→                  key={area}
+   927→                  variant="outline"
+   928→                  className="border-amber-200 bg-amber-50 text-[11px] font-medium text-amber-700"
+   929→                >
+   930→                  {area}
+   931→                </Badge>
+   932→              ))}
+   933→            </div>
+   934→          )}
+   935→        </AICard>
+   936→      )}
+   937→
+   938→      {/* question breakdown */}
+   939→      <Card className="shadow-xs">
+   940→        <div className="border-b border-slate-100 px-5 py-4">
+   941→          <h3 className="text-sm font-semibold text-slate-900">Question Breakdown</h3>
+   942→          <p className="mt-0.5 text-xs text-slate-500">
+   943→            Your answers vs the expected answers, with per-question AI feedback.
+   944→          </p>
+   945→        </div>
+   946→        <div className="space-y-3 p-5">
+   947→          {result.question_results.map((qr, i) => {
+   948→            const ratio = qr.marks > 0 ? qr.marks_obtained / qr.marks : 0
+   949→            const border =
+   950→              ratio >= 0.999
+   951→                ? 'border-l-emerald-500'
+   952→                : ratio > 0
+   953→                  ? 'border-l-amber-400'
+   954→                  : 'border-l-red-400'
+   955→            const mcqCorrect = qr.selected_option_id !== null && qr.selected_option_id === qr.correct_option_id
+   956→
+   957→            return (
+   958→              <div key={qr.question_id} className={cn('rounded-r-lg border border-slate-200 border-l-4 p-4', border)}>
+   959→                <div className="mb-2 flex flex-wrap items-center gap-2">
+   960→                  <span className="text-xs font-bold text-slate-400">Q{i + 1}</span>
+   961→                  <Badge variant="outline" className={cn('text-[11px] font-semibold', TYPE_BADGE[qr.question_type])}>
+   962→                    {questionTypeLabel(qr.question_type)}
+   963→                  </Badge>
+   964→                  <span className="ml-auto text-xs font-semibold tabular-nums text-slate-500">
+   965→                    {qr.marks_obtained}/{qr.marks} marks
+   966→                  </span>
+   967→                </div>
+   968→
+   969→                <p className="text-sm font-medium leading-relaxed text-slate-800">{qr.question_text}</p>
+   970→
+   971→                {qr.question_type === 'MCQ' ? (
+   972→                  <div className="mt-3 space-y-1.5 text-sm">
+   973→                    <p className={cn('flex gap-2', mcqCorrect ? 'text-emerald-700' : 'text-red-600')}>
+   974→                      <span className="shrink-0 font-semibold">Your answer:</span>
+   975→                      <span>
+   976→                        {optionLabel(qr.question_id, qr.selected_option_id)}{' '}
+   977→                        {optionText(qr.question_id, qr.selected_option_id)}
+   978→                      </span>
+   979→                    </p>
+   980→                    {!mcqCorrect && (
+   981→                      <p className="flex gap-2 text-emerald-700">
+   982→                        <span className="shrink-0 font-semibold">Correct answer:</span>
+   983→                        <span>
+   984→                          {optionLabel(qr.question_id, qr.correct_option_id)}{' '}
+   985→                          {optionText(qr.question_id, qr.correct_option_id)}
+   986→                        </span>
+   987→                      </p>
+   988→                    )}
+   989→                    {qr.explanation && (
+   990→                      <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+   991→                        <span className="font-semibold">Explanation: </span>
+   992→                        {qr.explanation}
+   993→                      </p>
+   994→                    )}
+   995→                  </div>
+   996→                ) : (
+   997→                  <div className="mt-3 space-y-2">
+   998→                    <div>
+   999→                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Your answer</p>
+  1000→                      <p className="mt-1 whitespace-pre-line rounded-lg bg-slate-50 px-3 py-2 text-sm leading-relaxed text-slate-700">
+  1001→                        {qr.student_answer && qr.student_answer.trim() ? (
+  1002→                          qr.student_answer
+  1003→                        ) : (
+  1004→                          <span className="italic text-slate-400">Not attempted</span>
+  1005→                        )}
+  1006→                      </p>
+  1007→                    </div>
+  1008→                    {qr.feedback && (
+  1009→                      <div className="rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2">
+  1010→                        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">
+  1011→                          AI Examiner feedback
+  1012→                        </p>
+  1013→                        <p className="mt-0.5 whitespace-pre-line text-xs leading-relaxed text-slate-600">
+  1014→                          {qr.feedback}
+  1015→                        </p>
+  1016→                      </div>
+  1017→                    )}
+  1018→                  </div>
+  1019→                )}
+  1020→              </div>
+  1021→            )
+  1022→          })}
+  1023→        </div>
+  1024→      </Card>
+  1025→
+  1026→      {/* actions */}
+  1027→      <div className="flex flex-wrap items-center justify-center gap-3">
+  1028→        <Button variant="outline" onClick={onRestart}>
+  1029→          <RotateCcw className="h-4 w-4" /> Take Another Test
+  1030→        </Button>
+  1031→        <Button className="bg-violet-600 hover:bg-violet-700" onClick={onPerformance}>
+  1032→          View Performance <ArrowRight className="h-4 w-4" />
+  1033→        </Button>
+  1034→      </div>
+  1035→    </>
+  1036→  )
+  1037→}
+  1038→

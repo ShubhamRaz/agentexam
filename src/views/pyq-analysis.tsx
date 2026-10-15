@@ -330,7 +330,7 @@ export function PYQAnalysisView() {
               <EmptyState
                 icon={SearchX}
                 title="No PYQs available"
-                message="Upload previous year papers in Materials — AI will extract and map questions to topics."
+                message="PYQ analysis appears once you upload previous-year papers — AI extracts and maps them to your topics."
               />
             ) : (
               <EmptyState

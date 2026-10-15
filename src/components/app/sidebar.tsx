@@ -20,6 +20,12 @@ const TOP_NAV: NavItem[] = [
   { id: 'pyq-analysis', label: 'PYQ Analysis', icon: ClipboardList },
 ]
 
+const FACULTY_NAV: NavItem[] = [
+  { id: 'faculty-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'materials', label: 'Materials', icon: BookOpen },
+  { id: 'pyq-analysis', label: 'PYQ Analysis', icon: ClipboardList },
+]
+
 const PRACTICE_NAV: NavItem[] = [
   { id: 'exam', label: 'Theory Exam', icon: PenTool },
   { id: 'practical', label: 'Practical', icon: FlaskConical },
@@ -30,6 +36,10 @@ const ANALYTICS_NAV: NavItem[] = [
   { id: 'performance', label: 'Performance', icon: BarChart3 },
   { id: 'readiness', label: 'Readiness', icon: Target },
   { id: 'study-plan', label: 'Study Plan', icon: CalendarCheck },
+]
+
+const FACULTY_ANALYTICS_NAV: NavItem[] = [
+  { id: 'performance', label: 'Performance', icon: BarChart3 },
 ]
 
 function NavSection({ label, items, current, onNavigate }: {
@@ -75,6 +85,7 @@ export function Sidebar({ current, onNavigate, open, onClose }: {
   onClose: () => void
 }) {
   const { user, logout } = useAuth()
+  const isFaculty = user?.role === 'FACULTY'
 
   const navigate = (v: ViewId) => {
     onNavigate(v)
@@ -109,9 +120,18 @@ export function Sidebar({ current, onNavigate, open, onClose }: {
 
         {/* Nav */}
         <div className="ae-scroll flex-1 overflow-y-auto px-3 pb-4">
-          <NavSection items={TOP_NAV} current={current} onNavigate={navigate} />
-          <NavSection label="Practice" items={PRACTICE_NAV} current={current} onNavigate={navigate} />
-          <NavSection label="Analytics" items={ANALYTICS_NAV} current={current} onNavigate={navigate} />
+          {isFaculty ? (
+            <>
+              <NavSection items={FACULTY_NAV} current={current} onNavigate={navigate} />
+              <NavSection label="Analytics" items={FACULTY_ANALYTICS_NAV} current={current} onNavigate={navigate} />
+            </>
+          ) : (
+            <>
+              <NavSection items={TOP_NAV} current={current} onNavigate={navigate} />
+              <NavSection label="Practice" items={PRACTICE_NAV} current={current} onNavigate={navigate} />
+              <NavSection label="Analytics" items={ANALYTICS_NAV} current={current} onNavigate={navigate} />
+            </>
+          )}
         </div>
 
         {/* User footer */}
@@ -121,7 +141,14 @@ export function Sidebar({ current, onNavigate, open, onClose }: {
               {initials(user?.name || 'Student')}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-800">{user?.name}</p>
+              <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-slate-800">
+                <span className="truncate">{user?.name}</span>
+                {isFaculty && (
+                  <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                    Faculty
+                  </span>
+                )}
+              </p>
               <p className="truncate text-xs text-slate-400">{user?.email}</p>
             </div>
             <button

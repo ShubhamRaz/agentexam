@@ -18,9 +18,18 @@ import { PerformanceView } from '@/views/performance'
 import { ReadinessView } from '@/views/readiness'
 import { StudyPlanView } from '@/views/study-plan'
 import { ProfileView } from '@/views/profile'
+import { FacultyDashboardView } from '@/views/faculty-dashboard'
+import { ClassroomView } from '@/views/classroom'
 import type { ViewId } from '@/lib/types'
 
 type AuthView = 'login' | 'signup' | 'forgot'
+
+function scrollToTop() {
+  if (typeof document !== 'undefined') {
+    document.getElementById('ae-main')?.scrollTo({ top: 0 })
+    window.scrollTo({ top: 0 })
+  }
+}
 
 function BootSplash() {
   return (
@@ -42,37 +51,57 @@ function BootSplash() {
 
 function AppShell() {
   const { user } = useAuth()
-  const [view, setView] = useState<ViewId>('dashboard')
+  // `view` stays null until the user navigates; the landing view is derived
+  // per-role in render (no setState-in-effect). AuthGate unmounts/remounts
+  // AppShell on login/logout, so the default re-derives for each session.
+  const [view, setView] = useState<ViewId | null>(null)
+  const [classroomId, setClassroomId] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const activeView: ViewId = view ?? (user?.role === 'FACULTY' ? 'faculty-dashboard' : 'dashboard')
 
   const navigate = useCallback((v: ViewId) => {
     setView(v)
     // scroll content to top on view change
-    if (typeof document !== 'undefined') {
-      document.getElementById('ae-main')?.scrollTo({ top: 0 })
-      window.scrollTo({ top: 0 })
-    }
+    scrollToTop()
+  }, [])
+
+  const openClassroom = useCallback((id: string) => {
+    setClassroomId(id)
+    setView('classroom')
+    scrollToTop()
+  }, [])
+
+  const backToFacultyDashboard = useCallback(() => {
+    setView('faculty-dashboard')
+    scrollToTop()
   }, [])
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <Sidebar current={view} onNavigate={navigate} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar current={activeView} onNavigate={navigate} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex min-h-screen flex-col lg:pl-64">
-        <Header view={view} onMenuClick={() => setSidebarOpen(true)} />
+        <Header view={activeView} onMenuClick={() => setSidebarOpen(true)} />
 
         <main id="ae-main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          {view === 'dashboard' && <DashboardView onNavigate={navigate} />}
-          {view === 'materials' && <MaterialsView />}
-          {view === 'syllabus' && <SyllabusAnalysisView />}
-          {view === 'pyq-analysis' && <PYQAnalysisView />}
-          {view === 'exam' && <TheoryExamView onNavigate={navigate} />}
-          {view === 'practical' && <PracticalExamView />}
-          {view === 'viva' && <AIVivaView />}
-          {view === 'performance' && <PerformanceView />}
-          {view === 'readiness' && <ReadinessView onNavigate={navigate} />}
-          {view === 'study-plan' && <StudyPlanView />}
-          {view === 'profile' && <ProfileView />}
+          {activeView === 'faculty-dashboard' && (
+            <FacultyDashboardView onNavigate={navigate} onOpenClassroom={openClassroom} />
+          )}
+          {activeView === 'classroom' && classroomId !== '' && (
+            <ClassroomView classroomId={classroomId} onNavigate={navigate} onBack={backToFacultyDashboard} />
+          )}
+          {activeView === 'dashboard' && <DashboardView onNavigate={navigate} />}
+          {activeView === 'materials' && <MaterialsView />}
+          {activeView === 'syllabus' && <SyllabusAnalysisView />}
+          {activeView === 'pyq-analysis' && <PYQAnalysisView />}
+          {activeView === 'exam' && <TheoryExamView onNavigate={navigate} />}
+          {activeView === 'practical' && <PracticalExamView />}
+          {activeView === 'viva' && <AIVivaView />}
+          {activeView === 'performance' && <PerformanceView />}
+          {activeView === 'readiness' && <ReadinessView onNavigate={navigate} />}
+          {activeView === 'study-plan' && <StudyPlanView />}
+          {activeView === 'profile' && <ProfileView />}
         </main>
 
         <footer className="mt-auto border-t border-slate-200 bg-white">

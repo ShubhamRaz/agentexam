@@ -16,6 +16,8 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
   readiness: { title: 'Exam Readiness', subtitle: 'How prepared are you for the exam?' },
   'study-plan': { title: 'Study Plan', subtitle: 'Your personalized AI study schedule' },
   profile: { title: 'Profile & Settings', subtitle: 'Manage your account' },
+  'faculty-dashboard': { title: 'Faculty Dashboard', subtitle: 'Your classrooms, students and test analytics' },
+  classroom: { title: 'Classroom', subtitle: 'Students, materials and conducted tests' },
 }
 
 export function Header({ view, onMenuClick }: { view: string; onMenuClick: () => void }) {

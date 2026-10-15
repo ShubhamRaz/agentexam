@@ -7,6 +7,9 @@ export type ViewId =
   | 'dashboard' | 'materials' | 'syllabus' | 'pyq-analysis'
   | 'exam' | 'practical' | 'viva' | 'performance'
   | 'readiness' | 'study-plan' | 'profile'
+  | 'faculty-dashboard' | 'classroom'
+
+export type UserRole = 'STUDENT' | 'FACULTY'
 
 export interface AuthUser {
   id: string
@@ -24,6 +27,12 @@ export interface Subject {
   name: string
   code: string
   description: string | null
+  /** 'own' — created from your uploads; 'classroom' — shared by a faculty */
+  source?: 'own' | 'classroom'
+  classroomName?: string | null
+  units?: number
+  topics?: number
+  questions?: number
 }
 
 export type Importance = 'high' | 'medium' | 'low'
@@ -54,6 +63,32 @@ export interface Material {
   subjectId: string
   size: string
   uploadDate: string
+  /** present when uploaded by faculty (classroom materials) */
+  uploadedByName?: string
+  analysisSummary?: {
+    units: number
+    topics: number
+    questions: number
+    experiments: number
+    subjectName: string
+    isNewSubject: boolean
+  } | null
+}
+
+/* ---------- Material upload (AI pipeline) ---------- */
+
+export interface MaterialUploadResult {
+  material: Material
+  subject: { id: string; name: string; code: string }
+  created: {
+    units: number
+    topics: number
+    questions: number
+    experiments: number
+    isNewSubject: boolean
+  }
+  studyPlanGenerated: boolean
+  processingMethod: 'AI' | 'FALLBACK'
 }
 
 export type PYQType = 'Long Answer' | 'Short Answer' | 'Objective'
@@ -244,4 +279,99 @@ export class ApiError extends Error {
     super(message)
     this.status = status
   }
+}
+
+/* ---------- Classrooms (faculty) ---------- */
+
+export interface ClassroomSummary {
+  id: string
+  name: string
+  code: string
+  createdAt: string
+  studentCount: number
+  subjectCount: number
+  materialCount: number
+}
+
+export interface ClassroomStudentRow {
+  id: string
+  name: string
+  email: string
+  addedAt: string
+  testsCompleted: number
+  averageScore: number | null
+  lastActive: string | null
+}
+
+export interface ClassroomSubjectRow {
+  id: string
+  name: string
+  code: string
+  units: number
+  topics: number
+  questions: number
+  materialCount: number
+}
+
+export interface ConductedTestStudentRow {
+  studentId: string
+  name: string
+  status: 'not_started' | 'in_progress' | 'submitted' | 'evaluated'
+  score: number | null
+  submittedAt: string | null
+}
+
+export interface ConductedTestRow {
+  id: string
+  title: string
+  subject: string
+  questionCount: number
+  totalMarks: number
+  durationMinutes: number
+  createdAt: string
+  dueDate: string | null
+  completed: number
+  total: number
+  averageScore: number | null
+  students: ConductedTestStudentRow[]
+}
+
+export interface ClassroomDetail {
+  id: string
+  name: string
+  code: string
+  createdAt: string
+  facultyName: string
+  students: ClassroomStudentRow[]
+  subjects: ClassroomSubjectRow[]
+  tests: ConductedTestRow[]
+}
+
+export interface FacultyDashboardData {
+  facultyName: string
+  stats: {
+    classrooms: number
+    students: number
+    subjects: number
+    materials: number
+    testsConducted: number
+    averageScore: number | null
+  }
+  classrooms: ClassroomSummary[]
+  recentActivity: { id: string; title: string; detail: string; time: string }[]
+}
+
+/* ---------- Assigned tests (student side) ---------- */
+
+export interface AssignedTest {
+  id: string
+  title: string
+  subject: string
+  assignedByName: string
+  questionCount: number
+  totalMarks: number
+  durationMinutes: number
+  createdAt: string
+  dueDate: string | null
+  status: 'DRAFT' | 'IN_PROGRESS' | 'EVALUATED'
 }

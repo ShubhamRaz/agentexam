@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser, unauthorized } from '@/lib/auth'
+import { getVisibleSubjectIds } from '@/app/api/lib/compute'
 import type { PracticalExperiment } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -13,10 +14,15 @@ export async function GET(req: NextRequest) {
   const user = await getAuthUser(req)
   if (!user) return unauthorized()
 
-  const experiments = await db.experiment.findMany({
-    include: { subject: true },
-    orderBy: { title: 'asc' },
-  })
+  // experiments of subjects the user can actually see
+  const visibleIds = await getVisibleSubjectIds(user.id)
+  const experiments = visibleIds.length
+    ? await db.experiment.findMany({
+        where: { subjectId: { in: visibleIds } },
+        include: { subject: true },
+        orderBy: { title: 'asc' },
+      })
+    : []
 
   const tests = await db.mockTest.findMany({
     where: { studentId: user.id, testType: 'PRACTICAL' },

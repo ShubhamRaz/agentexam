@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser, unauthorized } from '@/lib/auth'
-import { shuffle, round2 } from '@/app/api/lib/compute'
+import { shuffle, round2, isSubjectVisible } from '@/app/api/lib/compute'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +23,9 @@ export async function POST(req: NextRequest) {
 
   const subject = await db.subject.findUnique({ where: { id: subjectId } })
   if (!subject) return Response.json({ error: 'Subject not found' }, { status: 404 })
+  if (!(await isSubjectVisible(user.id, subjectId))) {
+    return Response.json({ error: 'Subject not available' }, { status: 403 })
+  }
 
   const vivaQuestions = await db.question.findMany({
     where: { subjectId, questionType: 'VIVA', status: 'ACTIVE' },

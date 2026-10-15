@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Eye, EyeOff, Loader2, Sparkles } from 'lucide-react'
+import { Eye, EyeOff, GraduationCap, Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -41,19 +41,42 @@ export function LoginView({ onNavigate }: { onNavigate: (v: 'signup' | 'forgot')
     setError(null)
   }
 
+  const fillFacultyDemo = () => {
+    setEmail('faculty@agentexam.ai')
+    setPassword('faculty123')
+    setError(null)
+  }
+
   return (
     <AuthLayout title="Welcome back" subtitle="Sign in to continue your exam preparation">
-      <button
-        type="button"
-        onClick={fillDemo}
-        className="mb-5 flex w-full items-center gap-2.5 rounded-lg border border-violet-200 bg-violet-50/70 px-3.5 py-2.5 text-left text-xs transition-colors hover:bg-violet-50"
-      >
-        <Sparkles className="h-4 w-4 shrink-0 text-violet-600" />
-        <span className="flex-1 text-slate-600">
-          <span className="font-semibold text-violet-800">Try the demo account</span> — click to autofill
-          <span className="ml-1 font-mono text-[11px] text-violet-700">demo@agentexam.ai / demo123</span>
-        </span>
-      </button>
+      <div className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={fillDemo}
+          className="flex w-full items-center gap-2.5 rounded-lg border border-violet-200 bg-violet-50/70 px-3.5 py-2.5 text-left text-xs transition-colors hover:bg-violet-50"
+        >
+          <Sparkles className="h-4 w-4 shrink-0 text-violet-600" />
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold text-violet-800">Try the demo account</span>
+            <span className="mt-0.5 block truncate font-mono text-[11px] text-violet-700">
+              demo@agentexam.ai / demo123
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={fillFacultyDemo}
+          className="flex w-full items-center gap-2.5 rounded-lg border border-violet-200 bg-violet-50/70 px-3.5 py-2.5 text-left text-xs transition-colors hover:bg-violet-50"
+        >
+          <GraduationCap className="h-4 w-4 shrink-0 text-violet-600" />
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold text-violet-800">Faculty demo</span>
+            <span className="mt-0.5 block truncate font-mono text-[11px] text-violet-700">
+              faculty@agentexam.ai / faculty123
+            </span>
+          </span>
+        </button>
+      </div>
 
       <form onSubmit={submit} className="space-y-5">
         {error && (

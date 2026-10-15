@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser, unauthorized } from '@/lib/auth'
+import { isSubjectVisible } from '@/app/api/lib/compute'
 import type { Importance } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params
   const subject = await db.subject.findUnique({ where: { id } })
   if (!subject) return Response.json({ error: 'Subject not found' }, { status: 404 })
+  if (!(await isSubjectVisible(user.id, id))) {
+    return Response.json({ error: 'Subject not available' }, { status: 403 })
+  }
 
   const units = await db.unit.findMany({
     where: { subjectId: id },

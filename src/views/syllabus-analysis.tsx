@@ -210,13 +210,13 @@ export function SyllabusAnalysisView() {
         <EmptyState
           icon={BookOpen}
           title="No subjects yet"
-          message="Add a subject in Materials first, then upload its syllabus to unlock analysis."
+          message="Upload your syllabus or materials — AgentExam's AI will build your subjects here."
         />
       ) : units.length === 0 ? (
         <EmptyState
           icon={BookOpen}
           title="No syllabus data"
-          message={`Upload a syllabus${activeSubject === 'all' ? '' : ` for ${activeSubjectName}`} to see analysis.`}
+          message={`Upload a syllabus${activeSubject === 'all' ? '' : ` for ${activeSubjectName}`} to see the AI breakdown.`}
         />
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">

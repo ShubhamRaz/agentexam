@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser, unauthorized } from '@/lib/auth'
+import { getVisibleSubjectIds } from '@/app/api/lib/compute'
 import type { PYQ, PYQType } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -17,9 +18,13 @@ export async function GET(req: NextRequest) {
 
   const subjectId = req.nextUrl.searchParams.get('subject_id')
 
+  // PYQs are scoped to the subjects the user can actually see
+  const visibleIds = await getVisibleSubjectIds(user.id)
+
   const questions = await db.question.findMany({
     where: {
       source: 'PYQ',
+      subjectId: { in: visibleIds },
       ...(subjectId ? { subjectId } : {}),
     },
     include: { subject: true },

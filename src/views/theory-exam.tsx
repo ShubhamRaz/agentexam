@@ -14,12 +14,15 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Clock,
+  FileText,
   Flag,
   Loader2,
   RotateCcw,
   Send,
   Sparkles,
+  Upload,
   Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -47,11 +50,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { AICard, ErrorCard, LoadingCard, ProgressCircle, ViewHeader } from '@/components/app/bits'
+import { AICard, ErrorCard, ProgressCircle, ViewHeader } from '@/components/app/bits'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
-import { formatClock, questionTypeLabel } from '@/lib/helpers'
+import { formatClock, formatDate, questionTypeLabel } from '@/lib/helpers'
 import { cn } from '@/lib/utils'
 import type {
+  AssignedTest,
   ExamQuestion,
   ExamResult,
   ExamStartResponse,
@@ -96,6 +101,30 @@ const EVAL_STEPS = [
 
 const DEBOUNCE_MS = 800
 
+/* assigned-test status chip + due-date urgency */
+
+const ASSIGNED_STATUS: Record<AssignedTest['status'], { label: string; badge: string }> = {
+  DRAFT: { label: 'Pending', badge: 'border-amber-200 bg-amber-50 text-amber-700' },
+  IN_PROGRESS: { label: 'In Progress', badge: 'border-cyan-200 bg-cyan-50 text-cyan-700' },
+  EVALUATED: { label: 'Evaluated', badge: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+}
+
+function dueChip(dueDate: string | null): { label: string; badge: string } | null {
+  if (!dueDate) return null
+  const due = new Date(dueDate)
+  const daysLeft = Math.ceil((due.getTime() - Date.now()) / 86400000)
+  if (daysLeft < 0) {
+    return { label: `Overdue · was due ${formatDate(dueDate)}`, badge: 'border-red-200 bg-red-50 text-red-700' }
+  }
+  if (daysLeft <= 2) {
+    return {
+      label: `Due ${formatDate(dueDate)} · ${daysLeft === 0 ? 'today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}`,
+      badge: 'border-amber-200 bg-amber-50 text-amber-700',
+    }
+  }
+  return { label: `Due ${formatDate(dueDate)}`, badge: 'border-slate-200 bg-slate-50 text-slate-600' }
+}
+
 /* ============================================================
    Main view
    ============================================================ */
@@ -105,6 +134,11 @@ export function TheoryExamView({ onNavigate }: { onNavigate: (v: ViewId) => void
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [subjectsLoading, setSubjectsLoading] = useState(true)
   const [subjectsError, setSubjectsError] = useState<string | null>(null)
+
+  const [assigned, setAssigned] = useState<AssignedTest[]>([])
+  const [assignedLoading, setAssignedLoading] = useState(true)
+  const [assignedError, setAssignedError] = useState<string | null>(null)
+  const [startingId, setStartingId] = useState<string | null>(null)
 
   const [config, setConfig] = useState<ExamConfig | null>(null)
   const [exam, setExam] = useState<ExamStartResponse | null>(null)
@@ -122,9 +156,25 @@ export function TheoryExamView({ onNavigate }: { onNavigate: (v: ViewId) => void
       .finally(() => setSubjectsLoading(false))
   }, [])
 
+  const loadAssigned = useCallback(() => {
+    setAssignedLoading(true)
+    setAssignedError(null)
+    api
+      .get<AssignedTest[]>('/exams/assigned')
+      .then(data => setAssigned(data || []))
+      .catch(err =>
+        setAssignedError(err instanceof Error ? err.message : 'Failed to load assigned tests')
+      )
+      .finally(() => setAssignedLoading(false))
+  }, [])
+
   useEffect(() => {
     loadSubjects()
   }, [loadSubjects])
+
+  useEffect(() => {
+    loadAssigned()
+  }, [loadAssigned])
 
   /* create + start the exam, then move to the exam phase */
   const handleStart = useCallback(async (cfg: ExamConfig) => {
@@ -150,6 +200,35 @@ export function TheoryExamView({ onNavigate }: { onNavigate: (v: ViewId) => void
       setCreating(false)
     }
   }, [])
+
+  /* start an assigned (faculty-conducted) test directly — reuses the exam phase */
+  const handleStartAssigned = useCallback(
+    async (test: AssignedTest) => {
+      if (startingId) return
+      setStartingId(test.id)
+      try {
+        const started = await api.post<ExamStartResponse>(`/exams/${test.id}/start`)
+        const marks = started.questions.reduce((sum, q) => sum + q.marks, 0)
+        setConfig({
+          subjectId: '',
+          subjectName: test.subject,
+          difficulty: 'MIXED',
+          questionCount: started.questions.length,
+          durationMinutes: test.durationMinutes,
+        })
+        setExam(started)
+        setTotalMarks(marks)
+        setPhase('exam')
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to start the assigned test. Please try again.'
+        )
+      } finally {
+        setStartingId(null)
+      }
+    },
+    [startingId]
+  )
 
   const handleExamFinished = useCallback((res: ExamResult) => {
     setResult(res)
@@ -188,21 +267,110 @@ export function TheoryExamView({ onNavigate }: { onNavigate: (v: ViewId) => void
   }
 
   /* ---------- setup phase (default) ---------- */
+  const openAssigned = assigned.filter(t => t.status === 'DRAFT' || t.status === 'IN_PROGRESS')
+
   return (
     <div className="animate-fade-in-up space-y-6">
       <ViewHeader
         title="Theory Exam"
         subtitle="AI-graded mock tests — objective answers scored instantly, written answers evaluated by your AI examiner"
       />
+
+      {/* Assigned tests from faculty (skips manual setup) */}
+      {assignedLoading ? (
+        <Card className="shadow-xs">
+          <CardContent className="flex items-center gap-3 p-5">
+            <Skeleton className="h-10 w-10 rounded-xl" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-56" />
+              <Skeleton className="h-3 w-40" />
+            </div>
+          </CardContent>
+        </Card>
+      ) : assignedError ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white px-5 py-3 shadow-xs">
+          <p className="text-xs text-slate-500">Couldn&apos;t load assigned tests — {assignedError}</p>
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={loadAssigned}>
+            Try again
+          </Button>
+        </div>
+      ) : openAssigned.length > 0 ? (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-violet-600" />
+            <h2 className="text-base font-bold text-slate-900">Assigned Tests</h2>
+            <Badge variant="outline" className="bg-violet-50 text-[11px] font-medium text-violet-700">
+              {openAssigned.length}
+            </Badge>
+          </div>
+          {openAssigned.map(test => {
+            const status = ASSIGNED_STATUS[test.status] ?? ASSIGNED_STATUS.DRAFT
+            const due = dueChip(test.dueDate)
+            return (
+              <Card key={test.id} className="shadow-xs transition-shadow hover:shadow-md">
+                <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-bold text-slate-900">{test.title}</p>
+                      <Badge variant="outline" className={cn('text-[11px] font-medium', status.badge)}>
+                        {status.label}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {test.subject} · assigned by {test.assignedByName}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <Badge variant="outline" className="bg-slate-50 text-[11px] font-medium text-slate-600">
+                        {test.questionCount} questions · {test.totalMarks} marks · {test.durationMinutes} min
+                      </Badge>
+                      {due && (
+                        <Badge variant="outline" className={cn('text-[11px] font-medium', due.badge)}>
+                          <Clock className="h-3 w-3" /> {due.label}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    className="h-10 shrink-0 bg-violet-600 font-semibold hover:bg-violet-700"
+                    disabled={startingId !== null}
+                    onClick={() => void handleStartAssigned(test)}
+                  >
+                    {startingId === test.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Zap className="h-4 w-4" />
+                    )}
+                    {startingId === test.id ? 'Starting…' : 'Start Assigned Test'}
+                  </Button>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </section>
+      ) : null}
+
       {subjectsError ? (
         <ErrorCard message={subjectsError} onRetry={loadSubjects} />
       ) : (
-        <ExamSetup
-          subjects={subjects}
-          subjectsLoading={subjectsLoading}
-          creating={creating}
-          onStart={handleStart}
-        />
+        <>
+          {/* subtle divider between assigned + manual practice */}
+          {openAssigned.length > 0 && !assignedLoading && !assignedError && (
+            <div className="flex items-center gap-3" aria-hidden>
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                Practice on your own
+              </span>
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
+          )}
+          <ExamSetup
+            subjects={subjects}
+            subjectsLoading={subjectsLoading}
+            creating={creating}
+            onStart={handleStart}
+            onNavigate={onNavigate}
+          />
+        </>
       )}
     </div>
   )
@@ -217,11 +385,13 @@ function ExamSetup({
   subjectsLoading,
   creating,
   onStart,
+  onNavigate,
 }: {
   subjects: Subject[]
   subjectsLoading: boolean
   creating: boolean
   onStart: (config: ExamConfig) => void
+  onNavigate: (v: ViewId) => void
 }) {
   const [subjectId, setSubjectId] = useState('')
   const [difficulty, setDifficulty] = useState<ExamConfig['difficulty']>('MEDIUM')
@@ -229,6 +399,30 @@ function ExamSetup({
   const [duration, setDuration] = useState(30)
 
   const canStart = !!subjectId && !creating && !subjectsLoading
+
+  /* nothing to practice yet — point the user at the upload-driven onboarding */
+  if (!subjectsLoading && subjects.length === 0) {
+    return (
+      <Card className="mx-auto w-full max-w-xl shadow-xs">
+        <CardContent className="flex flex-col items-center gap-3 p-8 text-center sm:p-10">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
+            <FileText className="h-7 w-7" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900">No subjects yet</h2>
+          <p className="max-w-xs text-sm leading-relaxed text-slate-500">
+            Upload your syllabus first — AgentExam&apos;s AI will create your subjects and generate
+            your question bank.
+          </p>
+          <Button
+            className="mt-2 h-10 bg-violet-600 font-semibold hover:bg-violet-700"
+            onClick={() => onNavigate('materials')}
+          >
+            <Upload className="mr-2 h-4 w-4" /> Upload Materials
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className="mx-auto w-full max-w-xl shadow-xs">
@@ -251,7 +445,17 @@ function ExamSetup({
               <SelectContent>
                 {subjects.map(s => (
                   <SelectItem key={s.id} value={s.id}>
-                    {s.name}
+                    <span className="truncate">{s.name}</span>
+                    <span
+                      className={cn(
+                        'ml-2 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
+                        s.source === 'classroom'
+                          ? 'bg-violet-100 text-violet-700'
+                          : 'bg-slate-100 text-slate-500'
+                      )}
+                    >
+                      {s.source === 'classroom' ? 'shared' : 'yours'}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
