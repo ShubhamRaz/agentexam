@@ -1,0 +1,751 @@
+     1→'use client'
+     2→
+     3→/* ============================================
+     4→   AGENTEXAM — Study Materials view (upload-driven)
+     5→   No subject required: the backend AI pipeline
+     6→   auto-detects the subject from the file, builds
+     7→   units/topics/questions and regenerates the study
+     8→   plan. Faculty can additionally target a classroom.
+     9→   ============================================ */
+    10→
+    11→import { useCallback, useEffect, useRef, useState } from 'react'
+    12→import {
+    13→  ArrowDown,
+    14→  BookOpen,
+    15→  CalendarCheck,
+    16→  CheckCircle2,
+    17→  ClipboardList,
+    18→  FileText,
+    19→  FlaskConical,
+    20→  FolderOpen,
+    21→  Loader2,
+    22→  Plus,
+    23→  Search,
+    24→  Sparkles,
+    25→  Upload,
+    26→  Users,
+    27→  XCircle,
+    28→  type LucideIcon,
+    29→} from 'lucide-react'
+    30→import { toast } from 'sonner'
+    31→import { api } from '@/lib/api-client'
+    32→import { useAuth } from '@/lib/auth-context'
+    33→import type {
+    34→  ClassroomSummary,
+    35→  Material,
+    36→  MaterialType,
+    37→  MaterialUploadResult,
+    38→  Subject,
+    39→} from '@/lib/types'
+    40→import { formatDate } from '@/lib/helpers'
+    41→import { AIBadge, EmptyState, ErrorCard, ViewHeader } from '@/components/app/bits'
+    42→import { Badge } from '@/components/ui/badge'
+    43→import { Button } from '@/components/ui/button'
+    44→import { Card, CardContent } from '@/components/ui/card'
+    45→import {
+    46→  Dialog,
+    47→  DialogContent,
+    48→  DialogDescription,
+    49→  DialogFooter,
+    50→  DialogHeader,
+    51→  DialogTitle,
+    52→} from '@/components/ui/dialog'
+    53→import { Input } from '@/components/ui/input'
+    54→import { Label } from '@/components/ui/label'
+    55→import {
+    56→  Select,
+    57→  SelectContent,
+    58→  SelectItem,
+    59→  SelectTrigger,
+    60→  SelectValue,
+    61→} from '@/components/ui/select'
+    62→import { Skeleton } from '@/components/ui/skeleton'
+    63→import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+    64→import { cn } from '@/lib/utils'
+    65→
+    66→type TabId = 'all' | MaterialType
+    67→
+    68→interface UploadJob {
+    69→  id: string
+    70→  name: string
+    71→  status: 'uploading' | 'done' | 'error'
+    72→  /** rotating AI pipeline step index (while in flight) */
+    73→  stage: number
+    74→}
+    75→
+    76→const MAX_SIZE = 10 * 1024 * 1024 // 10MB
+    77→
+    78→const AUTO_SUBJECT = 'auto'
+    79→const NO_CLASSROOM = 'none'
+    80→
+    81→/** animated steps cycled while a file is in the AI pipeline */
+    82→const AI_STEPS = [
+    83→  'Extracting text…',
+    84→  'AI analyzing syllabus…',
+    85→  'Generating question bank…',
+    86→  'Building study plan…',
+    87→]
+    88→
+    89→const UPLOAD_TYPE: Record<MaterialType, string> = {
+    90→  syllabus: 'SYLLABUS',
+    91→  pyq: 'PYQ',
+    92→  notes: 'NOTES',
+    93→  lab_manual: 'LAB_MANUAL',
+    94→}
+    95→
+    96→const TYPE_META: Record<MaterialType, { label: string; icon: LucideIcon; tile: string }> = {
+    97→  syllabus: { label: 'Syllabus', icon: FileText, tile: 'bg-violet-50 text-violet-600' },
+    98→  pyq: { label: 'PYQs', icon: ClipboardList, tile: 'bg-amber-50 text-amber-600' },
+    99→  notes: { label: 'Notes', icon: BookOpen, tile: 'bg-cyan-50 text-cyan-600' },
+   100→  lab_manual: { label: 'Lab Manuals', icon: FlaskConical, tile: 'bg-emerald-50 text-emerald-600' },
+   101→}
+   102→
+   103→const TABS: { id: TabId; label: string }[] = [
+   104→  { id: 'all', label: 'All' },
+   105→  { id: 'syllabus', label: 'Syllabus' },
+   106→  { id: 'pyq', label: 'PYQs' },
+   107→  { id: 'notes', label: 'Notes' },
+   108→  { id: 'lab_manual', label: 'Lab Manuals' },
+   109→]
+   110→
+   111→const STAGGER = ['stagger-1', 'stagger-2', 'stagger-3', 'stagger-4']
+   112→
+   113→const ONBOARDING_TILES: { icon: LucideIcon; title: string; desc: string; tile: string }[] = [
+   114→  {
+   115→    icon: FileText,
+   116→    title: 'Any format',
+   117→    desc: 'PDF, DOCX or images — the AI reads them all.',
+   118→    tile: 'bg-violet-50 text-violet-600',
+   119→  },
+   120→  {
+   121→    icon: ClipboardList,
+   122→    title: 'AI question bank',
+   123→    desc: 'PYQ-pattern questions generated from YOUR material.',
+   124→    tile: 'bg-amber-50 text-amber-600',
+   125→  },
+   126→  {
+   127→    icon: CalendarCheck,
+   128→    title: 'Auto study plan',
+   129→    desc: 'A day-wise plan built around your exam date.',
+   130→    tile: 'bg-cyan-50 text-cyan-600',
+   131→  },
+   132→]
+   133→
+   134→function statusBadge(status: Material['status']) {
+   135→  switch (status) {
+   136→    case 'processed':
+   137→      return (
+   138→        <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-[11px] font-medium text-emerald-700">
+   139→          <CheckCircle2 className="h-3 w-3" /> Analyzed
+   140→        </Badge>
+   141→      )
+   142→    case 'processing':
+   143→      return (
+   144→        <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-[11px] font-medium text-amber-700">
+   145→          <Loader2 className="h-3 w-3 animate-spin" /> Processing
+   146→        </Badge>
+   147→      )
+   148→    case 'uploading':
+   149→      return (
+   150→        <Badge variant="outline" className="gap-1 border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-600">
+   151→          <Upload className="h-3 w-3" /> Uploading
+   152→        </Badge>
+   153→      )
+   154→    default:
+   155→      return (
+   156→        <Badge variant="outline" className="gap-1 border-red-200 bg-red-50 text-[11px] font-medium text-red-700">
+   157→          <XCircle className="h-3 w-3" /> Failed
+   158→        </Badge>
+   159→      )
+   160→  }
+   161→}
+   162→
+   163→function MaterialsSkeleton() {
+   164→  return (
+   165→    <div className="space-y-6">
+   166→      <Skeleton className="h-10 w-72 rounded-lg" />
+   167→      <Skeleton className="h-36 w-full rounded-xl" />
+   168→      <Skeleton className="h-10 w-full rounded-lg" />
+   169→      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
+   170→        {[0, 1, 2, 3, 4, 5].map(i => (
+   171→          <Skeleton key={i} className="h-[108px] rounded-xl" />
+   172→        ))}
+   173→      </div>
+   174→    </div>
+   175→  )
+   176→}
+   177→
+   178→/* ---------- onboarding hero (first-run students/faculty) ---------- */
+   179→
+   180→function OnboardingHero() {
+   181→  return (
+   182→    <div className="animate-fade-in-up stagger-1 relative overflow-hidden rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/90 via-white to-cyan-50/50 p-6 shadow-xs sm:p-8">
+   183→      <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-violet-100/60 blur-2xl" />
+   184→      <div className="pointer-events-none absolute -bottom-24 -left-12 h-40 w-40 rounded-full bg-cyan-100/60 blur-2xl" />
+   185→
+   186→      <div className="relative">
+   187→        <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-100 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
+   188→          <Sparkles className="h-3 w-3" /> AI-powered onboarding
+   189→        </span>
+   190→        <h2 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+   191→          Start by uploading your syllabus
+   192→        </h2>
+   193→        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+   194→          Upload your syllabus, notes, previous-year papers or lab manual — AgentExam&apos;s AI will
+   195→          build your subjects, generate practice questions and create a personalized study plan.
+   196→        </p>
+   197→
+   198→        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+   199→          {ONBOARDING_TILES.map(t => (
+   200→            <div key={t.title} className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+   201→              <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', t.tile)}>
+   202→                <t.icon className="h-4 w-4" />
+   203→              </div>
+   204→              <p className="mt-2.5 text-sm font-semibold text-slate-800">{t.title}</p>
+   205→              <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{t.desc}</p>
+   206→            </div>
+   207→          ))}
+   208→        </div>
+   209→
+   210→        <div className="mt-6 flex justify-center" aria-hidden>
+   211→          <div className="flex h-10 w-10 animate-bounce items-center justify-center rounded-full bg-violet-600 text-white shadow-lg shadow-violet-200">
+   212→            <ArrowDown className="h-5 w-5" />
+   213→          </div>
+   214→        </div>
+   215→      </div>
+   216→    </div>
+   217→  )
+   218→}
+   219→
+   220→export function MaterialsView() {
+   221→  const { user } = useAuth()
+   222→  const isFaculty = user?.role === 'FACULTY'
+   223→
+   224→  const [materials, setMaterials] = useState<Material[]>([])
+   225→  const [subjects, setSubjects] = useState<Subject[]>([])
+   226→  const [classrooms, setClassrooms] = useState<ClassroomSummary[]>([])
+   227→  const [loading, setLoading] = useState(true)
+   228→  const [error, setError] = useState<string | null>(null)
+   229→
+   230→  const [selectedSubject, setSelectedSubject] = useState<string>(AUTO_SUBJECT)
+   231→  const [selectedClassroom, setSelectedClassroom] = useState<string>(NO_CLASSROOM)
+   232→  const [activeTab, setActiveTab] = useState<TabId>('all')
+   233→  const [search, setSearch] = useState('')
+   234→  const [dragOver, setDragOver] = useState(false)
+   235→  const [uploadQueue, setUploadQueue] = useState<UploadJob[]>([])
+   236→
+   237→  const [dialogOpen, setDialogOpen] = useState(false)
+   238→  const [newSubjectName, setNewSubjectName] = useState('')
+   239→  const [creating, setCreating] = useState(false)
+   240→
+   241→  const fileInputRef = useRef<HTMLInputElement>(null)
+   242→
+   243→  const load = useCallback(async () => {
+   244→    setLoading(true)
+   245→    setError(null)
+   246→    try {
+   247→      const [mats, subs] = await Promise.all([
+   248→        api.get<Material[]>('/materials'),
+   249→        api.get<Subject[]>('/subjects'),
+   250→      ])
+   251→      setMaterials(mats)
+   252→      setSubjects(subs)
+   253→      if (isFaculty) {
+   254→        try {
+   255→          const rooms = await api.get<ClassroomSummary[]>('/classrooms')
+   256→          setClassrooms(rooms)
+   257→        } catch {
+   258→          setClassrooms([]) // non-fatal — classroom targeting is optional
+   259→        }
+   260→      }
+   261→    } catch (err) {
+   262→      setError(err instanceof Error ? err.message : 'Failed to load materials')
+   263→    } finally {
+   264→      setLoading(false)
+   265→    }
+   266→  }, [isFaculty])
+   267→
+   268→  useEffect(() => {
+   269→    load()
+   270→  }, [load])
+   271→
+   272→  /* rotate the animated AI step label for every in-flight upload */
+   273→  const anyUploading = uploadQueue.some(u => u.status === 'uploading')
+   274→  useEffect(() => {
+   275→    if (!anyUploading) return
+   276→    const t = window.setInterval(() => {
+   277→      setUploadQueue(q =>
+   278→        q.map(u =>
+   279→          u.status === 'uploading' ? { ...u, stage: (u.stage + 1) % AI_STEPS.length } : u
+   280→        )
+   281→      )
+   282→    }, 4000)
+   283→    return () => window.clearInterval(t)
+   284→  }, [anyUploading])
+   285→
+   286→  /* ---------- upload (drag & drop + browse) ---------- */
+   287→
+   288→  const handleFiles = useCallback(
+   289→    async (fileList: FileList | File[]) => {
+   290→      const files = Array.from(fileList)
+   291→      if (files.length === 0) return
+   292→
+   293→      const tooBig = files.filter(f => f.size > MAX_SIZE)
+   294→      const valid = files.filter(f => f.size <= MAX_SIZE)
+   295→      if (tooBig.length > 0) {
+   296→        toast.error(
+   297→          tooBig.length === 1
+   298→            ? `"${tooBig[0]!.name}" exceeds the 10MB limit`
+   299→            : `${tooBig.length} files exceed the 10MB limit`
+   300→        )
+   301→      }
+   302→      if (valid.length === 0) return
+   303→
+   304→      const materialType = activeTab === 'all' ? 'NOTES' : UPLOAD_TYPE[activeTab]
+   305→      const jobs: UploadJob[] = valid.map(f => ({
+   306→        id: crypto.randomUUID(),
+   307→        name: f.name,
+   308→        status: 'uploading' as const,
+   309→        stage: 0,
+   310→      }))
+   311→      setUploadQueue(q => [...q, ...jobs])
+   312→
+   313→      let ok = 0
+   314→      for (let i = 0; i < valid.length; i++) {
+   315→        const file = valid[i]!
+   316→        const job = jobs[i]!
+   317→        try {
+   318→          const fd = new FormData()
+   319→          fd.append('file', file)
+   320→          fd.append('material_type', materialType)
+   321→          if (selectedSubject !== AUTO_SUBJECT) fd.append('subject_id', selectedSubject)
+   322→          if (isFaculty && selectedClassroom !== NO_CLASSROOM) {
+   323→            fd.append('classroom_id', selectedClassroom)
+   324→          }
+   325→          const res = await api.upload<MaterialUploadResult>('/materials/upload', fd)
+   326→          ok++
+   327→          setUploadQueue(q => q.map(u => (u.id === job.id ? { ...u, status: 'done' } : u)))
+   328→
+   329→          if (res.processingMethod === 'FALLBACK' || res.material.status === 'failed') {
+   330→            toast.warning('Saved file, but AI analysis failed — try re-uploading')
+   331→          } else if (res.created.isNewSubject) {
+   332→            toast.success(
+   333→              `✨ ${res.subject.name} ready — ${res.created.units} units · ${res.created.topics} topics · ${res.created.questions} questions generated`
+   334→            )
+   335→          } else {
+   336→            toast.success(
+   337→              `Added to ${res.subject.name} — ${res.created.questions} new questions`
+   338→            )
+   339→          }
+   340→        } catch (err) {
+   341→          setUploadQueue(q => q.map(u => (u.id === job.id ? { ...u, status: 'error' } : u)))
+   342→          toast.error(`"${file.name}" failed: ${err instanceof Error ? err.message : 'upload error'}`)
+   343→        }
+   344→      }
+   345→
+   346→      if (ok > 0) {
+   347→        try {
+   348→          // subjects/materials both change when the AI pipeline runs
+   349→          const [mats, subs] = await Promise.all([
+   350→            api.get<Material[]>('/materials'),
+   351→            api.get<Subject[]>('/subjects'),
+   352→          ])
+   353→          setMaterials(mats)
+   354→          setSubjects(subs)
+   355→        } catch {
+   356→          /* keep current list on refresh failure */
+   357→        }
+   358→      }
+   359→
+   360→      // fade the queue out once uploads settle
+   361→      window.setTimeout(() => {
+   362→        setUploadQueue(q => q.filter(u => !jobs.some(j => j.id === u.id)))
+   363→      }, 3500)
+   364→    },
+   365→    [selectedSubject, selectedClassroom, activeTab, isFaculty]
+   366→  )
+   367→
+   368→  /* ---------- subject creation (manual, secondary) ---------- */
+   369→
+   370→  const createSubject = async () => {
+   371→    const name = newSubjectName.trim()
+   372→    if (!name) {
+   373→      toast.error('Enter a subject name')
+   374→      return
+   375→    }
+   376→    setCreating(true)
+   377→    try {
+   378→      const sub = await api.post<Subject>('/subjects', { name })
+   379→      setSubjects(prev => [...prev, sub].sort((a, b) => a.name.localeCompare(b.name)))
+   380→      setSelectedSubject(sub.id)
+   381→      setDialogOpen(false)
+   382→      setNewSubjectName('')
+   383→      toast.success(`Subject "${sub.name}" created`)
+   384→    } catch (err) {
+   385→      toast.error(err instanceof Error ? err.message : 'Failed to create subject')
+   386→    } finally {
+   387→      setCreating(false)
+   388→    }
+   389→  }
+   390→
+   391→  /* ---------- derived ---------- */
+   392→
+   393→  const onboarding = materials.length === 0 && subjects.length === 0
+   394→
+   395→  const tabCount = (id: TabId) =>
+   396→    id === 'all' ? materials.length : materials.filter(m => m.type === id).length
+   397→
+   398→  const filtered = materials
+   399→    .filter(m => activeTab === 'all' || m.type === activeTab)
+   400→    .filter(m => m.name.toLowerCase().includes(search.trim().toLowerCase()))
+   401→
+   402→  if (loading) return <div className="animate-fade-in-up"><MaterialsSkeleton /></div>
+   403→  if (error) {
+   404→    return (
+   405→      <div className="animate-fade-in-up">
+   406→        <ViewHeader title="Study Materials" subtitle="Upload and manage your study files" />
+   407→        <ErrorCard message={error} onRetry={load} />
+   408→      </div>
+   409→    )
+   410→  }
+   411→
+   412→  const uploading = anyUploading
+   413→
+   414→  return (
+   415→    <div className="animate-fade-in-up space-y-6">
+   416→      <ViewHeader
+   417→        title="Study Materials"
+   418→        subtitle="Drop a file and the AI builds the subject, question bank and your study plan"
+   419→      >
+   420→        <AIBadge label="AI Analyzed" />
+   421→      </ViewHeader>
+   422→
+   423→      {/* onboarding hero — first run, nothing uploaded yet */}
+   424→      {onboarding && <OnboardingHero />}
+   425→
+   426→      {/* Upload target row — hidden for students in onboarding (auto-detect is the flow) */}
+   427→      {(!onboarding || isFaculty) && (
+   428→        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+   429→          <div className="w-full sm:w-64">
+   430→            <Label htmlFor="upload-subject" className="text-xs font-medium text-slate-500">
+   431→              Subject
+   432→            </Label>
+   433→            <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+   434→              <SelectTrigger id="upload-subject" className="mt-1.5 w-full bg-white">
+   435→                <SelectValue placeholder="Choose a subject…" />
+   436→              </SelectTrigger>
+   437→              <SelectContent>
+   438→                <SelectItem value={AUTO_SUBJECT} className="font-medium">
+   439→                  ✨ Auto-detect from file (AI)
+   440→                </SelectItem>
+   441→                {subjects.map(s => (
+   442→                  <SelectItem key={s.id} value={s.id}>
+   443→                    {s.name}
+   444→                  </SelectItem>
+   445→                ))}
+   446→              </SelectContent>
+   447→            </Select>
+   448→          </div>
+   449→
+   450→          {isFaculty && (
+   451→            <div className="w-full sm:w-64">
+   452→              <Label htmlFor="upload-classroom" className="text-xs font-medium text-slate-500">
+   453→                Upload into classroom
+   454→              </Label>
+   455→              {classrooms.length > 0 ? (
+   456→                <Select value={selectedClassroom} onValueChange={setSelectedClassroom}>
+   457→                  <SelectTrigger id="upload-classroom" className="mt-1.5 w-full bg-white">
+   458→                    <SelectValue placeholder="Choose a classroom…" />
+   459→                  </SelectTrigger>
+   460→                  <SelectContent>
+   461→                    <SelectItem value={NO_CLASSROOM}>Not shared (personal)</SelectItem>
+   462→                    {classrooms.map(c => (
+   463→                      <SelectItem key={c.id} value={c.id}>
+   464→                        {c.name}
+   465→                      </SelectItem>
+   466→                    ))}
+   467→                  </SelectContent>
+   468→                </Select>
+   469→              ) : (
+   470→                <p className="mt-1.5 flex h-9 items-center gap-1.5 text-xs text-slate-400">
+   471→                  <Users className="h-3.5 w-3.5 shrink-0" />
+   472→                  Create a classroom to share materials with students
+   473→                </p>
+   474→              )}
+   475→            </div>
+   476→          )}
+   477→
+   478→          <Button
+   479→            variant="ghost"
+   480→            size="sm"
+   481→            className="h-9 shrink-0 text-xs text-slate-500 hover:text-violet-700"
+   482→            onClick={() => setDialogOpen(true)}
+   483→          >
+   484→            <Plus className="mr-1 h-3.5 w-3.5" /> Add subject manually
+   485→          </Button>
+   486→          <p className="hidden text-xs text-slate-400 lg:block">
+   487→            Auto-detect lets the AI pick the subject from the file content.
+   488→          </p>
+   489→        </div>
+   490→      )}
+   491→
+   492→      {/* Drag & drop upload zone — the primary interaction */}
+   493→      <div>
+   494→        <div
+   495→          role="button"
+   496→          tabIndex={0}
+   497→          aria-label="Upload study materials"
+   498→          onClick={() => {
+   499→            if (!uploading) fileInputRef.current?.click()
+   500→          }}
+   501→          onKeyDown={e => {
+   502→            if (e.key === 'Enter' || e.key === ' ') {
+   503→              e.preventDefault()
+   504→              if (!uploading) fileInputRef.current?.click()
+   505→            }
+   506→          }}
+   507→          onDragOver={e => {
+   508→            e.preventDefault()
+   509→            e.stopPropagation()
+   510→            setDragOver(true)
+   511→          }}
+   512→          onDragLeave={e => {
+   513→            e.preventDefault()
+   514→            e.stopPropagation()
+   515→            setDragOver(false)
+   516→          }}
+   517→          onDrop={e => {
+   518→            e.preventDefault()
+   519→            e.stopPropagation()
+   520→            setDragOver(false)
+   521→            void handleFiles(e.dataTransfer.files)
+   522→          }}
+   523→          className={cn(
+   524→            'flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-6 py-10 text-center outline-none transition-all focus-visible:ring-2 focus-visible:ring-violet-300',
+   525→            dragOver
+   526→              ? 'scale-[1.01] border-violet-500 bg-violet-50/70'
+   527→              : 'border-slate-300 bg-white hover:border-violet-400 hover:bg-violet-50/40'
+   528→          )}
+   529→        >
+   530→          <input
+   531→            ref={fileInputRef}
+   532→            type="file"
+   533→            hidden
+   534→            multiple
+   535→            accept=".pdf,.doc,.docx,.jpg,.png"
+   536→            onChange={e => {
+   537→              if (e.target.files && e.target.files.length > 0) void handleFiles(e.target.files)
+   538→              e.target.value = '' // allow re-picking the same file
+   539→            }}
+   540→          />
+   541→          <div
+   542→            className={cn(
+   543→              'flex h-12 w-12 items-center justify-center rounded-full transition-colors',
+   544→              dragOver ? 'bg-violet-100 text-violet-600' : 'bg-violet-50 text-violet-500'
+   545→            )}
+   546→          >
+   547→            {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+   548→          </div>
+   549→          <h3 className="text-sm font-semibold text-slate-800">
+   550→            {uploading ? 'AI is analyzing your files…' : 'Upload Study Materials'}
+   551→          </h3>
+   552→          <p className="text-xs text-slate-500">
+   553→            Drag &amp; drop files or click to browse · PDF, DOC, Images · Max 10MB each
+   554→          </p>
+   555→        </div>
+   556→        <p className="mt-2 text-center text-[11px] text-slate-400">
+   557→          Uploads run the full AI pipeline — expect 20–60 seconds per file.
+   558→        </p>
+   559→
+   560→        {/* per-file AI pipeline progress */}
+   561→        {uploadQueue.length > 0 && (
+   562→          <div className="mt-3 space-y-2 rounded-xl border border-violet-100 bg-violet-50/40 p-3">
+   563→            {uploadQueue.map(job => (
+   564→              <div key={job.id} className="flex items-center gap-2.5 text-sm">
+   565→                {job.status === 'uploading' && (
+   566→                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-violet-600" />
+   567→                )}
+   568→                {job.status === 'done' && (
+   569→                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+   570→                )}
+   571→                {job.status === 'error' && <XCircle className="h-4 w-4 shrink-0 text-red-500" />}
+   572→                <span className="min-w-0 flex-1 truncate text-slate-700">{job.name}</span>
+   573→                <span
+   574→                  className={cn(
+   575→                    'shrink-0 text-xs font-medium',
+   576→                    job.status === 'uploading' && 'text-violet-600',
+   577→                    job.status === 'done' && 'text-emerald-600',
+   578→                    job.status === 'error' && 'text-red-600'
+   579→                  )}
+   580→                >
+   581→                  {job.status === 'uploading'
+   582→                    ? AI_STEPS[job.stage]
+   583→                    : job.status === 'done'
+   584→                      ? 'Done'
+   585→                      : 'Failed'}
+   586→                </span>
+   587→              </div>
+   588→            ))}
+   589→          </div>
+   590→        )}
+   591→      </div>
+   592→
+   593→      {/* Tabs + search + grid — only meaningful once something exists */}
+   594→      {!onboarding && (
+   595→        <>
+   596→          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+   597→            <Tabs value={activeTab} onValueChange={v => setActiveTab(v as TabId)}>
+   598→              <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-slate-100 p-1 lg:w-auto">
+   599→                {TABS.map(t => (
+   600→                  <TabsTrigger
+   601→                    key={t.id}
+   602→                    value={t.id}
+   603→                    className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:shadow-xs"
+   604→                  >
+   605→                    {t.label}
+   606→                    <span className="ml-1.5 rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600">
+   607→                      {tabCount(t.id)}
+   608→                    </span>
+   609→                  </TabsTrigger>
+   610→                ))}
+   611→              </TabsList>
+   612→            </Tabs>
+   613→            <div className="relative w-full lg:w-64">
+   614→              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+   615→              <Input
+   616→                value={search}
+   617→                onChange={e => setSearch(e.target.value)}
+   618→                placeholder="Search materials…"
+   619→                className="h-9 bg-white pl-9 text-sm"
+   620→              />
+   621→            </div>
+   622→          </div>
+   623→
+   624→          {/* Materials grid */}
+   625→          {filtered.length === 0 ? (
+   626→            <EmptyState
+   627→              icon={FolderOpen}
+   628→              title={search.trim() ? 'No materials match your search' : 'No materials found'}
+   629→              message={
+   630→                search.trim()
+   631→                  ? `Nothing matches "${search.trim()}" in this tab.`
+   632→                  : activeTab === 'all'
+   633→                    ? 'Upload your syllabus, PYQs, notes, or lab manuals to get started.'
+   634→                    : `No ${TYPE_META[activeTab as MaterialType].label} yet — drop files above and they will show up here.`
+   635→              }
+   636→            />
+   637→          ) : (
+   638→            <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
+   639→              {filtered.map((mat, i) => {
+   640→                const meta = TYPE_META[mat.type] ?? TYPE_META.notes
+   641→                return (
+   642→                  <Card
+   643→                    key={mat.id}
+   644→                    className={cn(
+   645→                      'animate-fade-in-up shadow-xs transition-shadow hover:shadow-md',
+   646→                      STAGGER[i % STAGGER.length]
+   647→                    )}
+   648→                  >
+   649→                    <CardContent className="flex items-start gap-3.5 p-4">
+   650→                      <div
+   651→                        className={cn(
+   652→                          'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+   653→                          meta.tile
+   654→                        )}
+   655→                      >
+   656→                        <meta.icon className="h-5 w-5" />
+   657→                      </div>
+   658→                      <div className="min-w-0 flex-1">
+   659→                        <p title={mat.name} className="truncate text-sm font-semibold text-slate-800">
+   660→                          {mat.name}
+   661→                        </p>
+   662→                        <p className="mt-0.5 truncate text-xs text-slate-400">
+   663→                          {mat.subject} · {mat.size}
+   664→                        </p>
+   665→                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+   666→                          {statusBadge(mat.status)}
+   667→                          {mat.analysisSummary && (
+   668→                            <Badge
+   669→                              variant="outline"
+   670→                              title={`${mat.analysisSummary.subjectName}: ${mat.analysisSummary.units} units · ${mat.analysisSummary.topics} topics · ${mat.analysisSummary.questions} questions`}
+   671→                              className="border-emerald-200 bg-emerald-50 text-[11px] font-medium text-emerald-700"
+   672→                            >
+   673→                              🤖 {mat.analysisSummary.units}u · {mat.analysisSummary.topics}t ·{' '}
+   674→                              {mat.analysisSummary.questions}q
+   675→                            </Badge>
+   676→                          )}
+   677→                          {mat.uploadedByName && (
+   678→                            <Badge
+   679→                              variant="outline"
+   680→                              title={`Uploaded by ${mat.uploadedByName}`}
+   681→                              className="border-violet-200 bg-violet-100 text-[11px] font-medium text-violet-700"
+   682→                            >
+   683→                              by {mat.uploadedByName}
+   684→                            </Badge>
+   685→                          )}
+   686→                        </div>
+   687→                        <span className="mt-1.5 block text-[11px] text-slate-400">
+   688→                          {formatDate(mat.uploadDate)}
+   689→                        </span>
+   690→                      </div>
+   691→                    </CardContent>
+   692→                  </Card>
+   693→                )
+   694→              })}
+   695→            </div>
+   696→          )}
+   697→        </>
+   698→      )}
+   699→
+   700→      {/* Add subject dialog (manual, rarely needed) */}
+   701→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   702→        <DialogContent className="sm:max-w-sm">
+   703→          <DialogHeader>
+   704→            <DialogTitle>Add Subject Manually</DialogTitle>
+   705→            <DialogDescription>
+   706→              Usually unnecessary — the AI auto-detects subjects from your uploads. Use this only
+   707→              for a subject with no files yet.
+   708→            </DialogDescription>
+   709→          </DialogHeader>
+   710→          <form
+   711→            className="space-y-4"
+   712→            onSubmit={e => {
+   713→              e.preventDefault()
+   714→              void createSubject()
+   715→            }}
+   716→          >
+   717→            <div className="space-y-2">
+   718→              <Label htmlFor="new-subject">Subject name</Label>
+   719→              <Input
+   720→                id="new-subject"
+   721→                autoFocus
+   722→                value={newSubjectName}
+   723→                onChange={e => setNewSubjectName(e.target.value)}
+   724→                placeholder="e.g. Machine Learning"
+   725→                className="h-10"
+   726→                maxLength={80}
+   727→              />
+   728→            </div>
+   729→            <DialogFooter>
+   730→              <Button
+   731→                type="button"
+   732→                variant="outline"
+   733→                onClick={() => setDialogOpen(false)}
+   734→                disabled={creating}
+   735→              >
+   736→                Cancel
+   737→              </Button>
+   738→              <Button type="submit" disabled={creating} className="bg-violet-600 hover:bg-violet-700">
+   739→                {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+   740→                {creating ? 'Creating…' : 'Create Subject'}
+   741→              </Button>
+   742→            </DialogFooter>
+   743→          </form>
+   744→        </DialogContent>
+   745→      </Dialog>
+   746→    </div>
+   747→  )
+   748→}
+   749→
+   750→export default MaterialsView
+   751→

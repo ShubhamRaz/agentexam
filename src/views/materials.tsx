@@ -2,10 +2,14 @@
 
 /* ============================================
    AGENTEXAM — Study Materials view (upload-driven)
-   No subject required: the backend AI pipeline
-   auto-detects the subject from the file, builds
-   units/topics/questions and regenerates the study
-   plan. Faculty can additionally target a classroom.
+   POST /materials/upload responds instantly; the
+   AI pipeline (extract → subject detection →
+   units/topics → question bank → study plan) runs
+   in the BACKGROUND and this view polls
+   GET /api/materials every 3s while anything is
+   still processing. Files are organized
+   CATEGORY-WISE: one card per subject with
+   Syllabus / Notes / PYQ / Lab Manual sections.
    ============================================ */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -15,30 +19,44 @@ import {
   CalendarCheck,
   CheckCircle2,
   ClipboardList,
+  Clock,
   FileText,
   FlaskConical,
   FolderOpen,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
+  Trash2,
   Upload,
   Users,
   XCircle,
   type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { api } from '@/lib/api-client'
+import { api, getToken } from '@/lib/api-client'
 import { useAuth } from '@/lib/auth-context'
+import { ApiError } from '@/lib/types'
 import type {
   ClassroomSummary,
   Material,
   MaterialType,
-  MaterialUploadResult,
+  MaterialUploadAccepted,
   Subject,
 } from '@/lib/types'
 import { formatDate } from '@/lib/helpers'
 import { AIBadge, EmptyState, ErrorCard, ViewHeader } from '@/components/app/bits'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -60,17 +78,41 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 
-type TabId = 'all' | MaterialType
+/* api-client has no DELETE wrapper — mirror its semantics locally */
+async function apiDelete(path: string): Promise<void> {
+  const headers: Record<string, string> = {}
+  const token = getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`/api${path}`, { method: 'DELETE', headers })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const data = (await res.json()) as { error?: string; message?: string }
+      message = data.error || data.message || message
+    } catch { /* ignore parse errors */ }
+    throw new ApiError(message, res.status)
+  }
+}
+
+type CategoryId = MaterialType
+
+interface SubjectGroup {
+  id: string
+  name: string
+  materials: Material[]
+}
 
 interface UploadJob {
   id: string
   name: string
-  status: 'uploading' | 'done' | 'error'
-  /** rotating AI pipeline step index (while in flight) */
+  /** server material id once the upload POST is accepted (drives live feedback) */
+  materialId?: string
+  status: 'queued' | 'uploading' | 'analyzing' | 'done' | 'error'
+  /** rotating AI pipeline step index while analyzing in the background */
   stage: number
+  startedAt: number
 }
 
 const MAX_SIZE = 10 * 1024 * 1024 // 10MB
@@ -78,10 +120,16 @@ const MAX_SIZE = 10 * 1024 * 1024 // 10MB
 const AUTO_SUBJECT = 'auto'
 const NO_CLASSROOM = 'none'
 
-/** animated steps cycled while a file is in the AI pipeline */
+/** poll GET /api/materials at this rate while any material is processing */
+const POLL_INTERVAL_MS = 3000
+/** safety sweep — drop a queue item that never reached a terminal state */
+const JOB_STALE_MS = 240_000
+
+/** animated stages cycled while a file's AI pipeline runs in the background */
 const AI_STEPS = [
+  'AI analyzing in background…',
   'Extracting text…',
-  'AI analyzing syllabus…',
+  'Detecting subject…',
   'Generating question bank…',
   'Building study plan…',
 ]
@@ -93,20 +141,20 @@ const UPLOAD_TYPE: Record<MaterialType, string> = {
   lab_manual: 'LAB_MANUAL',
 }
 
-const TYPE_META: Record<MaterialType, { label: string; icon: LucideIcon; tile: string }> = {
-  syllabus: { label: 'Syllabus', icon: FileText, tile: 'bg-violet-50 text-violet-600' },
-  pyq: { label: 'PYQs', icon: ClipboardList, tile: 'bg-amber-50 text-amber-600' },
-  notes: { label: 'Notes', icon: BookOpen, tile: 'bg-cyan-50 text-cyan-600' },
-  lab_manual: { label: 'Lab Manuals', icon: FlaskConical, tile: 'bg-emerald-50 text-emerald-600' },
-}
+/** fixed category order inside every subject card */
+const CATEGORY_ORDER: CategoryId[] = ['syllabus', 'notes', 'pyq', 'lab_manual']
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'syllabus', label: 'Syllabus' },
-  { id: 'pyq', label: 'PYQs' },
-  { id: 'notes', label: 'Notes' },
-  { id: 'lab_manual', label: 'Lab Manuals' },
-]
+const CATEGORY_META: Record<CategoryId, { label: string; selectLabel: string; icon: LucideIcon; tile: string }> = {
+  syllabus: { label: '📄 Syllabus', selectLabel: '📄 Syllabus', icon: FileText, tile: 'bg-violet-50 text-violet-600' },
+  notes: { label: '📚 Notes', selectLabel: '📚 Notes', icon: BookOpen, tile: 'bg-cyan-50 text-cyan-600' },
+  pyq: {
+    label: '📋 PYQ (Previous-Year Papers)',
+    selectLabel: '📋 PYQ papers',
+    icon: ClipboardList,
+    tile: 'bg-amber-50 text-amber-600',
+  },
+  lab_manual: { label: '🧪 Lab Manual', selectLabel: '🧪 Lab Manual', icon: FlaskConical, tile: 'bg-emerald-50 text-emerald-600' },
+}
 
 const STAGGER = ['stagger-1', 'stagger-2', 'stagger-3', 'stagger-4']
 
@@ -131,18 +179,22 @@ const ONBOARDING_TILES: { icon: LucideIcon; title: string; desc: string; tile: s
   },
 ]
 
+function fileCountLabel(n: number): string {
+  return n === 1 ? '1 file' : `${n} files`
+}
+
 function statusBadge(status: Material['status']) {
   switch (status) {
     case 'processed':
       return (
         <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-[11px] font-medium text-emerald-700">
-          <CheckCircle2 className="h-3 w-3" /> Analyzed
+          <CheckCircle2 className="h-3 w-3" /> AI Analyzed
         </Badge>
       )
     case 'processing':
       return (
         <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-[11px] font-medium text-amber-700">
-          <Loader2 className="h-3 w-3 animate-spin" /> Processing
+          <Loader2 className="h-3 w-3 animate-spin" /> AI analyzing…
         </Badge>
       )
     case 'uploading':
@@ -166,11 +218,8 @@ function MaterialsSkeleton() {
       <Skeleton className="h-10 w-72 rounded-lg" />
       <Skeleton className="h-36 w-full rounded-xl" />
       <Skeleton className="h-10 w-full rounded-lg" />
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
-        {[0, 1, 2, 3, 4, 5].map(i => (
-          <Skeleton key={i} className="h-[108px] rounded-xl" />
-        ))}
-      </div>
+      <Skeleton className="h-44 w-full rounded-xl" />
+      <Skeleton className="h-44 w-full rounded-xl sm:w-2/3" />
     </div>
   )
 }
@@ -217,6 +266,216 @@ function OnboardingHero() {
   )
 }
 
+/* ---------- material row (inside a category section) ---------- */
+
+function MaterialRow({ mat, busy, onReanalyze, onDelete }: {
+  mat: Material
+  busy: boolean
+  onReanalyze: (mat: Material) => void
+  onDelete: (mat: Material) => void
+}) {
+  const meta = CATEGORY_META[mat.type] ?? CATEGORY_META.notes
+  // uploadedByName is only set for OTHER people's uploads (faculty-shared
+  // classroom materials) — those cannot be re-analyzed or deleted here.
+  const canManage = !mat.uploadedByName
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-shadow hover:shadow-xs sm:p-4">
+      <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', meta.tile)}>
+        <meta.icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p title={mat.name} className="truncate text-sm font-semibold text-slate-800">
+          {mat.name}
+        </p>
+        <p className="mt-0.5 truncate text-xs text-slate-400">
+          {mat.size} · {formatDate(mat.uploadDate)}
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {statusBadge(mat.status)}
+          {mat.analysisSummary && (
+            <Badge
+              variant="outline"
+              title={`${mat.analysisSummary.subjectName}: ${mat.analysisSummary.units} units · ${mat.analysisSummary.topics} topics · ${mat.analysisSummary.questions} questions`}
+              className="border-emerald-200 bg-emerald-50 text-[11px] font-medium text-emerald-700"
+            >
+              🤖 {mat.analysisSummary.units}u · {mat.analysisSummary.topics}t ·{' '}
+              {mat.analysisSummary.questions}q
+            </Badge>
+          )}
+          {mat.uploadedByName && (
+            <Badge
+              variant="outline"
+              title={`Uploaded by ${mat.uploadedByName}`}
+              className="border-violet-200 bg-violet-100 text-[11px] font-medium text-violet-700"
+            >
+              by {mat.uploadedByName}
+            </Badge>
+          )}
+        </div>
+      </div>
+      {canManage && (
+        <div className="flex shrink-0 items-center gap-1">
+          {mat.status === 'failed' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 gap-1.5 px-2.5 text-xs font-medium text-violet-600 hover:bg-violet-50 hover:text-violet-700"
+              disabled={busy}
+              onClick={() => onReanalyze(mat)}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', busy && 'animate-spin')} />
+              Re-analyze
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 text-slate-400 hover:bg-red-50 hover:text-red-600"
+            aria-label={`Delete ${mat.name}`}
+            onClick={() => onDelete(mat)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- category section (Syllabus / Notes / PYQ / Lab Manual) ---------- */
+
+function CategorySection({ categoryId, materials, reanalyzingId, onReanalyze, onDelete }: {
+  categoryId: CategoryId
+  materials: Material[]
+  reanalyzingId: string | null
+  onReanalyze: (mat: Material) => void
+  onDelete: (mat: Material) => void
+}) {
+  const meta = CATEGORY_META[categoryId]
+  return (
+    <section>
+      <div className="mb-2 flex items-center gap-2">
+        <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-md', meta.tile)}>
+          <meta.icon className="h-3.5 w-3.5" />
+        </span>
+        <h4 className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {meta.label}
+        </h4>
+        <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-500">
+          {materials.length}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {materials.map(m => (
+          <MaterialRow
+            key={m.id}
+            mat={m}
+            busy={reanalyzingId === m.id}
+            onReanalyze={onReanalyze}
+            onDelete={onDelete}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/* ---------- subject card: name + count + category sections ---------- */
+
+function SubjectGroupCard({ group, reanalyzingId, onReanalyze, onDelete, className }: {
+  group: SubjectGroup
+  reanalyzingId: string | null
+  onReanalyze: (mat: Material) => void
+  onDelete: (mat: Material) => void
+  className?: string
+}) {
+  const byCategory: Record<CategoryId, Material[]> = {
+    syllabus: [],
+    notes: [],
+    pyq: [],
+    lab_manual: [],
+  }
+  for (const m of group.materials) byCategory[m.type].push(m)
+
+  return (
+    <Card className={cn('animate-fade-in-up shadow-xs', className)}>
+      <CardContent className="p-4 sm:p-5">
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+              <BookOpen className="h-4 w-4" />
+            </div>
+            <h3 title={group.name} className="truncate text-sm font-bold text-slate-900">
+              {group.name}
+            </h3>
+          </div>
+          <Badge
+            variant="outline"
+            className="shrink-0 border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-600"
+          >
+            {fileCountLabel(group.materials.length)}
+          </Badge>
+        </div>
+        <div className="space-y-5">
+          {CATEGORY_ORDER.filter(cat => byCategory[cat].length > 0).map(cat => (
+            <CategorySection
+              key={cat}
+              categoryId={cat}
+              materials={byCategory[cat]}
+              reanalyzingId={reanalyzingId}
+              onReanalyze={onReanalyze}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/* ---------- "Detecting subject…" group (subjectId still empty) ---------- */
+
+function DetectingGroupCard({ materials, reanalyzingId, onReanalyze, onDelete }: {
+  materials: Material[]
+  reanalyzingId: string | null
+  onReanalyze: (mat: Material) => void
+  onDelete: (mat: Material) => void
+}) {
+  return (
+    <Card className="animate-fade-in-up border-amber-200/70 bg-amber-50/30 shadow-xs">
+      <CardContent className="p-4 sm:p-5">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-500" />
+            <h3 className="truncate text-sm font-bold text-slate-900">🔄 Detecting subject…</h3>
+          </div>
+          <Badge
+            variant="outline"
+            className="shrink-0 border-amber-200 bg-amber-50 text-[11px] font-medium text-amber-700"
+          >
+            {fileCountLabel(materials.length)}
+          </Badge>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          The AI reads each file to detect its subject — analyzed files land in their subject card
+          below.
+        </p>
+        <div className="space-y-2">
+          {materials.map(m => (
+            <MaterialRow
+              key={m.id}
+              mat={m}
+              busy={reanalyzingId === m.id}
+              onReanalyze={onReanalyze}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function MaterialsView() {
   const { user } = useAuth()
   const isFaculty = user?.role === 'FACULTY'
@@ -228,8 +487,8 @@ export function MaterialsView() {
   const [error, setError] = useState<string | null>(null)
 
   const [selectedSubject, setSelectedSubject] = useState<string>(AUTO_SUBJECT)
+  const [selectedType, setSelectedType] = useState<MaterialType>('syllabus')
   const [selectedClassroom, setSelectedClassroom] = useState<string>(NO_CLASSROOM)
-  const [activeTab, setActiveTab] = useState<TabId>('all')
   const [search, setSearch] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [uploadQueue, setUploadQueue] = useState<UploadJob[]>([])
@@ -238,7 +497,28 @@ export function MaterialsView() {
   const [newSubjectName, setNewSubjectName] = useState('')
   const [creating, setCreating] = useState(false)
 
+  const [deleteTarget, setDeleteTarget] = useState<Material | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
+  /** last-seen materials snapshot — powers transition toasts in the poller */
+  const prevMaterialsRef = useRef<Material[]>([])
+
+  /* keep state + ref in lockstep so the poller can diff statuses */
+  const applyMaterials = useCallback((next: Material[]) => {
+    prevMaterialsRef.current = next
+    setMaterials(next)
+  }, [])
+
+  const refreshSubjects = useCallback(async () => {
+    try {
+      const subs = await api.get<Subject[]>('/subjects')
+      setSubjects(subs)
+    } catch {
+      /* non-fatal — subjects refresh again on the next transition */
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -248,7 +528,7 @@ export function MaterialsView() {
         api.get<Material[]>('/materials'),
         api.get<Subject[]>('/subjects'),
       ])
-      setMaterials(mats)
+      applyMaterials(mats)
       setSubjects(subs)
       if (isFaculty) {
         try {
@@ -263,27 +543,99 @@ export function MaterialsView() {
     } finally {
       setLoading(false)
     }
-  }, [isFaculty])
+  }, [isFaculty, applyMaterials])
 
   useEffect(() => {
     load()
   }, [load])
 
-  /* rotate the animated AI step label for every in-flight upload */
-  const anyUploading = uploadQueue.some(u => u.status === 'uploading')
+  /* ---------- live background polling ----------
+     While ANY material is `processing`, refetch the list every 3s and
+     react to transitions: processed → success toast, failed → warning
+     toast + Re-analyze affordance, subjectId gained → refresh subjects. */
+  const poll = useCallback(async () => {
+    try {
+      const mats = await api.get<Material[]>('/materials')
+      const prev = prevMaterialsRef.current
+
+      for (const m of mats) {
+        const before = prev.find(p => p.id === m.id)
+        if (!before || before.status !== 'processing') continue
+        if (m.status === 'processed') {
+          const sum = m.analysisSummary
+          if (sum?.isNewSubject) {
+            toast.success(
+              `✨ ${sum.subjectName} ready — ${sum.units}u · ${sum.topics}t · ${sum.questions}q generated`
+            )
+          } else if (sum) {
+            toast.success(`Added to ${sum.subjectName} — ${sum.questions} new questions`)
+          } else {
+            toast.success(`"${m.name}" analyzed`)
+          }
+        } else if (m.status === 'failed') {
+          toast.warning(`"${m.name}" — AI analysis failed`, {
+            description: 'Use the Re-analyze button on the material card.',
+          })
+        }
+      }
+
+      // a pending material just got its subject assigned → new subject may exist
+      const gainedSubject = mats.some(m => {
+        const before = prev.find(p => p.id === m.id)
+        return before && before.subjectId === '' && m.subjectId !== ''
+      })
+      if (gainedSubject) void refreshSubjects()
+
+      applyMaterials(mats)
+
+      // mirror per-file queue feedback for the uploads that triggered this
+      setUploadQueue(q =>
+        q.map(job => {
+          if (job.status !== 'analyzing' || !job.materialId) return job
+          const m = mats.find(x => x.id === job.materialId)
+          if (m?.status === 'processed') return { ...job, status: 'done' as const }
+          if (m?.status === 'failed') return { ...job, status: 'error' as const }
+          return job
+        })
+      )
+    } catch {
+      /* transient poll failure — the interval keeps trying */
+    }
+  }, [applyMaterials, refreshSubjects])
+
+  const hasProcessing = materials.some(m => m.status === 'processing')
   useEffect(() => {
-    if (!anyUploading) return
+    if (!hasProcessing) return
+    const t = window.setInterval(() => {
+      void poll()
+    }, POLL_INTERVAL_MS)
+    return () => window.clearInterval(t)
+  }, [hasProcessing, poll])
+
+  /* rotate the animated AI step labels while files analyze in the background */
+  const anyAnalyzing = uploadQueue.some(u => u.status === 'analyzing')
+  useEffect(() => {
+    if (!anyAnalyzing) return
     const t = window.setInterval(() => {
       setUploadQueue(q =>
-        q.map(u =>
-          u.status === 'uploading' ? { ...u, stage: (u.stage + 1) % AI_STEPS.length } : u
-        )
+        q
+          .filter(u => !(u.status === 'analyzing' && Date.now() - u.startedAt > JOB_STALE_MS))
+          .map(u => (u.status === 'analyzing' ? { ...u, stage: (u.stage + 1) % AI_STEPS.length } : u))
       )
-    }, 4000)
+    }, 5000)
     return () => window.clearInterval(t)
-  }, [anyUploading])
+  }, [anyAnalyzing])
 
-  /* ---------- upload (drag & drop + browse) ---------- */
+  /* fade the per-file queue out once every job reached a terminal state */
+  const queueSettled =
+    uploadQueue.length > 0 && uploadQueue.every(u => u.status === 'done' || u.status === 'error')
+  useEffect(() => {
+    if (!queueSettled) return
+    const t = window.setTimeout(() => setUploadQueue([]), 3500)
+    return () => window.clearTimeout(t)
+  }, [queueSettled])
+
+  /* ---------- upload (drag & drop + browse, strictly sequential) ---------- */
 
   const handleFiles = useCallback(
     async (fileList: FileList | File[]) => {
@@ -301,19 +653,22 @@ export function MaterialsView() {
       }
       if (valid.length === 0) return
 
-      const materialType = activeTab === 'all' ? 'NOTES' : UPLOAD_TYPE[activeTab]
+      const materialType = UPLOAD_TYPE[selectedType]
       const jobs: UploadJob[] = valid.map(f => ({
         id: crypto.randomUUID(),
         name: f.name,
-        status: 'uploading' as const,
+        status: 'queued' as const,
         stage: 0,
+        startedAt: Date.now(),
       }))
       setUploadQueue(q => [...q, ...jobs])
 
       let ok = 0
+      // one at a time — the backend runs a concurrency-limited AI queue
       for (let i = 0; i < valid.length; i++) {
         const file = valid[i]!
         const job = jobs[i]!
+        setUploadQueue(q => q.map(u => (u.id === job.id ? { ...u, status: 'uploading' } : u)))
         try {
           const fd = new FormData()
           fd.append('file', file)
@@ -322,21 +677,16 @@ export function MaterialsView() {
           if (isFaculty && selectedClassroom !== NO_CLASSROOM) {
             fd.append('classroom_id', selectedClassroom)
           }
-          const res = await api.upload<MaterialUploadResult>('/materials/upload', fd)
+          const res = await api.upload<MaterialUploadAccepted>('/materials/upload', fd)
           ok++
-          setUploadQueue(q => q.map(u => (u.id === job.id ? { ...u, status: 'done' } : u)))
-
-          if (res.processingMethod === 'FALLBACK' || res.material.status === 'failed') {
-            toast.warning('Saved file, but AI analysis failed — try re-uploading')
-          } else if (res.created.isNewSubject) {
-            toast.success(
-              `✨ ${res.subject.name} ready — ${res.created.units} units · ${res.created.topics} topics · ${res.created.questions} questions generated`
-            )
-          } else {
-            toast.success(
-              `Added to ${res.subject.name} — ${res.created.questions} new questions`
-            )
-          }
+          // the accepted material shows up under "Detecting subject…" right away
+          const optimistic: Material = { ...res.material }
+          delete optimistic.uploadedByName // always the current user's own upload
+          applyMaterials([optimistic, ...prevMaterialsRef.current])
+          setUploadQueue(q =>
+            q.map(u => (u.id === job.id ? { ...u, status: 'analyzing', materialId: res.material.id } : u))
+          )
+          toast.success(`"${file.name}" uploaded — AI is analyzing it in the background`)
         } catch (err) {
           setUploadQueue(q => q.map(u => (u.id === job.id ? { ...u, status: 'error' } : u)))
           toast.error(`"${file.name}" failed: ${err instanceof Error ? err.message : 'upload error'}`)
@@ -344,26 +694,55 @@ export function MaterialsView() {
       }
 
       if (ok > 0) {
+        // settle: one fresh materials+subjects pass (the poller takes over from here)
         try {
-          // subjects/materials both change when the AI pipeline runs
-          const [mats, subs] = await Promise.all([
-            api.get<Material[]>('/materials'),
-            api.get<Subject[]>('/subjects'),
-          ])
-          setMaterials(mats)
-          setSubjects(subs)
+          await poll()
+          await refreshSubjects()
         } catch {
           /* keep current list on refresh failure */
         }
       }
-
-      // fade the queue out once uploads settle
-      window.setTimeout(() => {
-        setUploadQueue(q => q.filter(u => !jobs.some(j => j.id === u.id)))
-      }, 3500)
     },
-    [selectedSubject, selectedClassroom, activeTab, isFaculty]
+    [selectedSubject, selectedClassroom, selectedType, isFaculty, applyMaterials, poll, refreshSubjects]
   )
+
+  /* ---------- re-analyze failed materials ---------- */
+
+  const reanalyze = async (mat: Material) => {
+    setReanalyzingId(mat.id)
+    try {
+      await api.post<{ ok: boolean; queued: boolean }>(`/materials/${mat.id}/reprocess`)
+      applyMaterials(
+        prevMaterialsRef.current.map(m =>
+          m.id === mat.id ? { ...m, status: 'processing' as const, analysisSummary: null } : m
+        )
+      )
+      // status flip restarts the live polling automatically
+      toast.success(`Re-analyzing "${mat.name}" — results land in ~20–60s`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to re-analyze material')
+    } finally {
+      setReanalyzingId(null)
+    }
+  }
+
+  /* ---------- delete (with confirm) ---------- */
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await apiDelete(`/materials/${deleteTarget.id}`)
+      applyMaterials(prevMaterialsRef.current.filter(m => m.id !== deleteTarget.id))
+      setUploadQueue(q => q.filter(u => u.materialId !== deleteTarget.id))
+      toast.success(`"${deleteTarget.name}" deleted`)
+      setDeleteTarget(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete material')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   /* ---------- subject creation (manual, secondary) ---------- */
 
@@ -390,15 +769,6 @@ export function MaterialsView() {
 
   /* ---------- derived ---------- */
 
-  const onboarding = materials.length === 0 && subjects.length === 0
-
-  const tabCount = (id: TabId) =>
-    id === 'all' ? materials.length : materials.filter(m => m.type === id).length
-
-  const filtered = materials
-    .filter(m => activeTab === 'all' || m.type === activeTab)
-    .filter(m => m.name.toLowerCase().includes(search.trim().toLowerCase()))
-
   if (loading) return <div className="animate-fade-in-up"><MaterialsSkeleton /></div>
   if (error) {
     return (
@@ -409,7 +779,37 @@ export function MaterialsView() {
     )
   }
 
-  const uploading = anyUploading
+  const onboarding = materials.length === 0 && subjects.length === 0
+
+  const searchLower = search.trim().toLowerCase()
+  const visibleMats = searchLower
+    ? materials.filter(m => m.name.toLowerCase().includes(searchLower))
+    : materials
+
+  // still-detecting files (subjectId '') get their own pinned group on top
+  const detecting = visibleMats.filter(m => m.subjectId === '')
+
+  // group the rest per subject — materials arrive newest-first, so groups
+  // order themselves by most recent activity
+  const groupIndex = new Map<string, SubjectGroup>()
+  const subjectGroups: SubjectGroup[] = []
+  for (const m of visibleMats) {
+    if (!m.subjectId) continue
+    let group = groupIndex.get(m.subjectId)
+    if (!group) {
+      group = {
+        id: m.subjectId,
+        name: subjects.find(s => s.id === m.subjectId)?.name ?? m.subject,
+        materials: [],
+      }
+      groupIndex.set(m.subjectId, group)
+      subjectGroups.push(group)
+    }
+    group.materials.push(m)
+  }
+
+  const anyUploading = uploadQueue.some(u => u.status === 'uploading' || u.status === 'queued')
+  const zoneBusy = anyUploading || anyAnalyzing
 
   return (
     <div className="animate-fade-in-up space-y-6">
@@ -426,7 +826,7 @@ export function MaterialsView() {
       {/* Upload target row — hidden for students in onboarding (auto-detect is the flow) */}
       {(!onboarding || isFaculty) && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
-          <div className="w-full sm:w-64">
+          <div className="w-full sm:w-56">
             <Label htmlFor="upload-subject" className="text-xs font-medium text-slate-500">
               Subject
             </Label>
@@ -447,8 +847,26 @@ export function MaterialsView() {
             </Select>
           </div>
 
+          <div className="w-full sm:w-44">
+            <Label htmlFor="upload-type" className="text-xs font-medium text-slate-500">
+              Material type
+            </Label>
+            <Select value={selectedType} onValueChange={v => setSelectedType(v as MaterialType)}>
+              <SelectTrigger id="upload-type" className="mt-1.5 w-full bg-white">
+                <SelectValue placeholder="Choose a type…" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORY_ORDER.map(cat => (
+                  <SelectItem key={cat} value={cat}>
+                    {CATEGORY_META[cat].selectLabel}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {isFaculty && (
-            <div className="w-full sm:w-64">
+            <div className="w-full sm:w-56">
               <Label htmlFor="upload-classroom" className="text-xs font-medium text-slate-500">
                 Upload into classroom
               </Label>
@@ -483,9 +901,6 @@ export function MaterialsView() {
           >
             <Plus className="mr-1 h-3.5 w-3.5" /> Add subject manually
           </Button>
-          <p className="hidden text-xs text-slate-400 lg:block">
-            Auto-detect lets the AI pick the subject from the file content.
-          </p>
         </div>
       )}
 
@@ -496,12 +911,12 @@ export function MaterialsView() {
           tabIndex={0}
           aria-label="Upload study materials"
           onClick={() => {
-            if (!uploading) fileInputRef.current?.click()
+            if (!anyUploading) fileInputRef.current?.click()
           }}
           onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
-              if (!uploading) fileInputRef.current?.click()
+              if (!anyUploading) fileInputRef.current?.click()
             }
           }}
           onDragOver={e => {
@@ -518,7 +933,9 @@ export function MaterialsView() {
             e.preventDefault()
             e.stopPropagation()
             setDragOver(false)
-            void handleFiles(e.dataTransfer.files)
+            // keep batches strictly sequential — a drop during an active
+            // batch would start parallel POSTs (the AI queue 429s)
+            if (!anyUploading) void handleFiles(e.dataTransfer.files)
           }}
           className={cn(
             'flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-6 py-10 text-center outline-none transition-all focus-visible:ring-2 focus-visible:ring-violet-300',
@@ -544,25 +961,31 @@ export function MaterialsView() {
               dragOver ? 'bg-violet-100 text-violet-600' : 'bg-violet-50 text-violet-500'
             )}
           >
-            {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+            {zoneBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
           </div>
           <h3 className="text-sm font-semibold text-slate-800">
-            {uploading ? 'AI is analyzing your files…' : 'Upload Study Materials'}
+            {anyUploading
+              ? 'Uploading your files…'
+              : anyAnalyzing
+                ? 'AI is analyzing your files…'
+                : 'Upload Study Materials'}
           </h3>
           <p className="text-xs text-slate-500">
             Drag &amp; drop files or click to browse · PDF, DOC, Images · Max 10MB each
           </p>
         </div>
         <p className="mt-2 text-center text-[11px] text-slate-400">
-          Uploads run the full AI pipeline — expect 20–60 seconds per file.
+          Drop multiple files — they upload one-by-one and the AI analyzes each in the background
+          (~20-60s).
         </p>
 
-        {/* per-file AI pipeline progress */}
+        {/* per-file upload + background-analysis progress */}
         {uploadQueue.length > 0 && (
           <div className="mt-3 space-y-2 rounded-xl border border-violet-100 bg-violet-50/40 p-3">
             {uploadQueue.map(job => (
               <div key={job.id} className="flex items-center gap-2.5 text-sm">
-                {job.status === 'uploading' && (
+                {job.status === 'queued' && <Clock className="h-4 w-4 shrink-0 text-slate-400" />}
+                {(job.status === 'uploading' || job.status === 'analyzing') && (
                   <Loader2 className="h-4 w-4 shrink-0 animate-spin text-violet-600" />
                 )}
                 {job.status === 'done' && (
@@ -573,16 +996,22 @@ export function MaterialsView() {
                 <span
                   className={cn(
                     'shrink-0 text-xs font-medium',
+                    job.status === 'queued' && 'text-slate-400',
                     job.status === 'uploading' && 'text-violet-600',
+                    job.status === 'analyzing' && 'text-violet-600',
                     job.status === 'done' && 'text-emerald-600',
                     job.status === 'error' && 'text-red-600'
                   )}
                 >
-                  {job.status === 'uploading'
-                    ? AI_STEPS[job.stage]
-                    : job.status === 'done'
-                      ? 'Done'
-                      : 'Failed'}
+                  {job.status === 'queued'
+                    ? 'Queued…'
+                    : job.status === 'uploading'
+                      ? 'Uploading…'
+                      : job.status === 'analyzing'
+                        ? AI_STEPS[job.stage]
+                        : job.status === 'done'
+                          ? 'Analyzed'
+                          : 'Upload failed'}
                 </span>
               </div>
             ))}
@@ -590,27 +1019,18 @@ export function MaterialsView() {
         )}
       </div>
 
-      {/* Tabs + search + grid — only meaningful once something exists */}
+      {/* Counts + search — only meaningful once something exists */}
       {!onboarding && (
         <>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <Tabs value={activeTab} onValueChange={v => setActiveTab(v as TabId)}>
-              <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-slate-100 p-1 lg:w-auto">
-                {TABS.map(t => (
-                  <TabsTrigger
-                    key={t.id}
-                    value={t.id}
-                    className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:shadow-xs"
-                  >
-                    {t.label}
-                    <span className="ml-1.5 rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600">
-                      {tabCount(t.id)}
-                    </span>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-            <div className="relative w-full lg:w-64">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-medium text-slate-500">
+              {search.trim()
+                ? `${visibleMats.length} of ${materials.length} ${materials.length === 1 ? 'file' : 'files'}`
+                : `${fileCountLabel(materials.length)} across ${subjectGroups.length} ${
+                    subjectGroups.length === 1 ? 'subject' : 'subjects'
+                  }${detecting.length > 0 ? ` · ${detecting.length} detecting` : ''}`}
+            </p>
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
                 value={search}
@@ -621,79 +1041,38 @@ export function MaterialsView() {
             </div>
           </div>
 
-          {/* Materials grid */}
-          {filtered.length === 0 ? (
-            <EmptyState
-              icon={FolderOpen}
-              title={search.trim() ? 'No materials match your search' : 'No materials found'}
-              message={
-                search.trim()
-                  ? `Nothing matches "${search.trim()}" in this tab.`
-                  : activeTab === 'all'
-                    ? 'Upload your syllabus, PYQs, notes, or lab manuals to get started.'
-                    : `No ${TYPE_META[activeTab as MaterialType].label} yet — drop files above and they will show up here.`
-              }
-            />
-          ) : (
-            <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
-              {filtered.map((mat, i) => {
-                const meta = TYPE_META[mat.type] ?? TYPE_META.notes
-                return (
-                  <Card
-                    key={mat.id}
-                    className={cn(
-                      'animate-fade-in-up shadow-xs transition-shadow hover:shadow-md',
-                      STAGGER[i % STAGGER.length]
-                    )}
-                  >
-                    <CardContent className="flex items-start gap-3.5 p-4">
-                      <div
-                        className={cn(
-                          'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
-                          meta.tile
-                        )}
-                      >
-                        <meta.icon className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p title={mat.name} className="truncate text-sm font-semibold text-slate-800">
-                          {mat.name}
-                        </p>
-                        <p className="mt-0.5 truncate text-xs text-slate-400">
-                          {mat.subject} · {mat.size}
-                        </p>
-                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                          {statusBadge(mat.status)}
-                          {mat.analysisSummary && (
-                            <Badge
-                              variant="outline"
-                              title={`${mat.analysisSummary.subjectName}: ${mat.analysisSummary.units} units · ${mat.analysisSummary.topics} topics · ${mat.analysisSummary.questions} questions`}
-                              className="border-emerald-200 bg-emerald-50 text-[11px] font-medium text-emerald-700"
-                            >
-                              🤖 {mat.analysisSummary.units}u · {mat.analysisSummary.topics}t ·{' '}
-                              {mat.analysisSummary.questions}q
-                            </Badge>
-                          )}
-                          {mat.uploadedByName && (
-                            <Badge
-                              variant="outline"
-                              title={`Uploaded by ${mat.uploadedByName}`}
-                              className="border-violet-200 bg-violet-100 text-[11px] font-medium text-violet-700"
-                            >
-                              by {mat.uploadedByName}
-                            </Badge>
-                          )}
-                        </div>
-                        <span className="mt-1.5 block text-[11px] text-slate-400">
-                          {formatDate(mat.uploadDate)}
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
-          )}
+          {/* Category-wise materials: Detecting group + one card per subject */}
+          <div className="ae-scroll max-h-[560px] space-y-4 overflow-y-auto pr-1">
+            {detecting.length > 0 && (
+              <DetectingGroupCard
+                materials={detecting}
+                reanalyzingId={reanalyzingId}
+                onReanalyze={mat => void reanalyze(mat)}
+                onDelete={setDeleteTarget}
+              />
+            )}
+            {subjectGroups.map((group, i) => (
+              <SubjectGroupCard
+                key={group.id}
+                group={group}
+                className={STAGGER[i % STAGGER.length]}
+                reanalyzingId={reanalyzingId}
+                onReanalyze={mat => void reanalyze(mat)}
+                onDelete={setDeleteTarget}
+              />
+            ))}
+            {visibleMats.length === 0 && (
+              <EmptyState
+                icon={FolderOpen}
+                title={search.trim() ? 'No materials match your search' : 'No materials yet'}
+                message={
+                  search.trim()
+                    ? `Nothing matches "${search.trim()}".`
+                    : 'Drop files in the upload zone — the AI organizes them per subject and category.'
+                }
+              />
+            )}
+          </div>
         </>
       )}
 
@@ -743,6 +1122,38 @@ export function MaterialsView() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Delete material confirmation */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={open => {
+          if (!open) setDeleteTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this material?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &quot;{deleteTarget?.name}&quot; and its stored file will be removed. Generated units,
+              topics and questions stay in your subject.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              disabled={deleting}
+              onClick={e => {
+                e.preventDefault() // keep the dialog open until the request settles
+                void confirmDelete()
+              }}
+            >
+              {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {deleting ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -125,7 +125,7 @@ export async function GET(req: NextRequest) {
     events.push({
       id: `material-${m.id}`,
       title: own ? `You uploaded "${m.title}"` : `${uploader} uploaded "${m.title}"`,
-      detail: `${subjectNameById.get(m.subjectId) ?? 'Subject'} material`,
+      detail: `${subjectNameById.get(m.subjectId ?? '') ?? 'Subject'} material`,
       time: m.createdAt.toISOString(),
     })
   }

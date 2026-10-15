@@ -11,19 +11,35 @@ import fs from 'fs/promises'
 
 type ChatRole = 'user' | 'assistant'
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/** Chat with retry + backoff — the SDK rate-limits (429) when several
+ *  pipeline stages run close together, so transient failures retry twice. */
 async function chat(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
-  const zai = await ZAI.create()
-  const completion = await zai.chat.completions.create({
-    messages: [
-      { role: 'assistant' as ChatRole, content: systemPrompt },
-      { role: 'user' as ChatRole, content: userPrompt },
-    ],
-    thinking: { type: 'disabled' },
-    max_tokens: maxTokens,
-  })
-  const content = completion.choices[0]?.message?.content
-  if (!content || !content.trim()) throw new Error('Empty AI response')
-  return content
+  const attempts = 3
+  let lastError: unknown = null
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const zai = await ZAI.create()
+      const completion = await zai.chat.completions.create({
+        messages: [
+          { role: 'assistant' as ChatRole, content: systemPrompt },
+          { role: 'user' as ChatRole, content: userPrompt },
+        ],
+        thinking: { type: 'disabled' },
+        max_tokens: maxTokens,
+      })
+      const content = completion.choices[0]?.message?.content
+      if (!content || !content.trim()) throw new Error('Empty AI response')
+      return content
+    } catch (e) {
+      lastError = e
+      if (i < attempts - 1) await sleep(i === 0 ? 2000 : 5000)
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('AI request failed')
 }
 
 /** Robustly extract the first JSON object from an LLM response. */
@@ -402,6 +418,10 @@ const QUESTION_PROMPT = `You are an expert university examiner. Using ONLY the d
 {"questions":[{"type":"MCQ|SHORT_ANSWER|LONG_ANSWER|VIVA","text":"...","options":[{"id":"A","text":"...","is_correct":true}],"correct_answer":"A","explanation":"why","marks":1,"difficulty":"EASY|MEDIUM|HARD","topic":"exact topic name from list","year":null,"source":"AI"}]}
 Rules: exactly 14 questions — 6 MCQ (4 options each, exactly one correct, ids A-D), 3 SHORT_ANSWER (marks 3), 2 LONG_ANSWER (marks 8), 3 VIVA (marks 2). Every question must be grounded in the document content. "topic" must exactly match one of the provided topic names. For MCQ, correct_answer is the correct option id and explanation is 1-2 sentences. If the document contains previous-year questions, mark those questions "source":"PYQ" and set "year" to their year; otherwise year null.`
 
+const PYQ_EXTRACTION_PROMPT = `You are digitising a university previous-year question paper (PYQ). Using ONLY the document text, EXTRACT the actual questions printed in the paper — lightly cleaned, wording preserved, NOT invented. You MUST reply with ONLY valid JSON (no markdown fences) of this exact shape:
+{"questions":[{"type":"MCQ|SHORT_ANSWER|LONG_ANSWER|VIVA","text":"...","options":[{"id":"A","text":"...","is_correct":true}],"correct_answer":"A","explanation":"model answer outline in 1-2 sentences","marks":2,"difficulty":"EASY|MEDIUM|HARD","topic":"exact topic name from list","year":2024,"source":"PYQ"}]}
+Rules: 12-18 questions, every one taken from the paper. Keep the paper's own marks and question style — objective/multiple-choice items → MCQ (build plausible options, mark the right one), everything else → SHORT_ANSWER (2-5 marks) or LONG_ANSWER (8-10 marks). Set "year" from the paper's year header (e.g. "2024-25" → 2024). "source" is always "PYQ". "topic" must exactly match one of the provided topic names (pick the closest concept). If a question covers two topics, duplicate it is NOT allowed — pick the dominant topic.`
+
 function fallbackQuestions(topics: string[], materialType: string): GeneratedQuestion[] {
   const t = (i: number) => topics[i % Math.max(1, topics.length)] || 'Fundamentals'
   const qs: GeneratedQuestion[] = []
@@ -448,16 +468,76 @@ function fallbackQuestions(topics: string[], materialType: string): GeneratedQue
   return qs
 }
 
+/** Parse the year out of a PYQ paper's header ("2024-25", "Nov 2023"…). */
+function guessYear(text: string): number {
+  const m = text.match(/20\d{2}/g)
+  if (!m) return new Date().getFullYear() - 1
+  return Math.max(...m.map(Number).filter(y => y <= new Date().getFullYear() + 1))
+}
+
+/** Grounded PYQ fallback: pull question-shaped lines straight from the paper. */
+function fallbackPyqQuestions(text: string, topicNames: string[]): GeneratedQuestion[] {
+  const year = guessYear(text)
+  const lines = text
+    .split('\n')
+    .map(l => l.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+  const seen = new Set<string>()
+  const qs: GeneratedQuestion[] = []
+  for (const line of lines) {
+    if (line.length < 25 || line.length > 400) continue
+    const questionish =
+      /^(?:[Qq]\.?\s*)?(?:\d{1,2}\s*[.)]\s*)?[A-Za-z]/.test(line) &&
+      (/[?]\s*$/.test(line) ||
+        /\b(?:define|explain|describe|discuss|derive|prove|state|list|compare|write|design|analyse|analyze|what|why|how|which|draw|differentiate|illustrate|evaluate)\b/i.test(line))
+    if (!questionish) continue
+    const key = line.toLowerCase().slice(0, 60)
+    if (seen.has(key)) continue
+    seen.add(key)
+    const marksMatch = line.match(/\[(\d{1,2})\s*marks?\]|\((\d{1,2})\s*marks?\)/i)
+    const marks = marksMatch ? Number(marksMatch[1] || marksMatch[2]) : line.length > 200 ? 10 : line.length > 90 ? 5 : 2
+    const lower = line.toLowerCase()
+    let bestTopic = topicNames[0] || 'General'
+    let bestScore = 0
+    for (const t of topicNames) {
+      const words = t.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3)
+      let s = 0
+      for (const w of words) if (lower.includes(w)) s++
+      if (s > bestScore) {
+        bestScore = s
+        bestTopic = t
+      }
+    }
+    qs.push({
+      type: marks >= 8 ? 'LONG_ANSWER' : 'SHORT_ANSWER',
+      text: line.replace(/^(?:[Qq]\.?\s*)?\d{1,2}\s*[.)]\s*/, '').slice(0, 400),
+      options: [],
+      correct_answer: '',
+      explanation: 'Extracted directly from the uploaded question paper.',
+      marks: [1, 2, 3, 5, 8, 10].includes(marks) ? marks : 2,
+      difficulty: marks >= 8 ? 'HARD' : 'MEDIUM',
+      topic: bestTopic,
+      year,
+      source: 'PYQ',
+    })
+    if (qs.length >= 16) break
+  }
+  return qs
+}
+
 export async function generateQuestionBank(
   extractedText: string,
   materialType: string,
   subjectName: string,
   topicNames: string[]
 ): Promise<GeneratedQuestion[]> {
+  const isPyq = materialType === 'PYQ'
   const text = extractedText.slice(0, 9000)
+  const prompt = isPyq ? PYQ_EXTRACTION_PROMPT : QUESTION_PROMPT
+  const minQuestions = isPyq ? 4 : 6
   try {
     const raw = await chat(
-      QUESTION_PROMPT,
+      prompt,
       `Subject: ${subjectName}
 Material type: ${materialType}
 Allowed topic names: ${topicNames.join('; ')}
@@ -493,9 +573,18 @@ ${text || '(no extractable text — write standard exam questions for the subjec
         source: q.source === 'PYQ' ? 'PYQ' : 'AI',
       } satisfies GeneratedQuestion
     }).filter(q => q.type !== 'MCQ' || (q.options.length >= 2 && q.options.some(o => o.is_correct)))
-    if (valid.length < 6) throw new Error('Too few questions')
+    if (valid.length < minQuestions) throw new Error('Too few questions')
+    if (isPyq) {
+      // a PYQ paper must yield PYQ-tagged questions — otherwise the whole
+      // PYQ-analysis feature stays empty; treat it as a failure and retry/fallback
+      if (!valid.some(q => q.source === 'PYQ')) throw new Error('No PYQ-tagged questions')
+    }
     return valid
   } catch {
+    if (isPyq) {
+      const fromPaper = fallbackPyqQuestions(text, topicNames.length ? topicNames : ['General'])
+      if (fromPaper.length >= 3) return fromPaper
+    }
     return fallbackQuestions(topicNames.length ? topicNames : ['Fundamentals'], materialType)
   }
 }
@@ -556,5 +645,88 @@ ${text || '(no text — write standard subject-appropriate lab experiments)'}
         marks: 10,
       },
     ]
+  }
+}
+
+/* ---------- AI study plan generation (RAG-fed) ---------- */
+
+export interface StudyPlanTaskAI {
+  title: string
+  subject: string
+  type: 'study' | 'practice' | 'test' | 'revision'
+  priority: 'high' | 'medium' | 'low'
+  duration: number // minutes
+}
+
+export interface StudyPlanAI {
+  days: { tasks: StudyPlanTaskAI[] }[] // exactly 7 entries
+}
+
+/**
+ * Generate a 7-day study plan from the user's real situation:
+ * subjects + their high-weightage topics, detected weak topics and
+ * the exam date. Returns null on AI failure (caller falls back to
+ * the deterministic plan).
+ */
+export async function generateStudyPlanTasks(input: {
+  subjects: { name: string; hotTopics: string[]; materialCount: number }[]
+  weakTopics: { topic: string; subject: string; score: number }[]
+  examDate?: string | null
+}): Promise<StudyPlanAI | null> {
+  if (input.subjects.length === 0) return null
+  const system = `You are a study-plan strategist for university exam preparation. Given the student's subjects, their most exam-important topics (weight-ordered), detected weak topics from past tests and an optional exam date, produce a 7-day study plan. Reply with ONLY valid JSON of this exact shape:
+{"days":[{"tasks":[{"title":"...","subject":"...","type":"study|practice|test|revision","priority":"high|medium|low","duration":45}]}]}
+Rules: exactly 7 days, 2-3 tasks per day (15-90 minutes each, realistic daily load). Prioritise weak topics early (type "practice", priority "high"). Reference real topic names in titles. If the exam date is close, shift later days to revision + mock tests. Titles are action-first, e.g. "Study: Virtualization — hypervisor types", "Practise PYQs: Cloud Security (weak topic)".`
+
+  const subjectLines = input.subjects
+    .map(
+      s =>
+        `- ${s.name}: ${s.materialCount} uploaded material(s); key topics: ${s.hotTopics.slice(0, 8).join(', ') || 'general syllabus'}`
+    )
+    .join('\n')
+  const weakLines = input.weakTopics.length
+    ? input.weakTopics
+        .slice(0, 10)
+        .map(w => `- ${w.topic} (${w.subject}) — last score ${w.score}%`)
+        .join('\n')
+    : '- none recorded yet'
+
+  const user = `Subjects:
+${subjectLines}
+
+Weak topics from past tests:
+${weakLines}
+
+Exam date: ${input.examDate || 'not set'}
+Build the 7-day plan.`
+
+  try {
+    const raw = await chat(system, user, 2048)
+    const parsed = extractJson<StudyPlanAI>(raw)
+    const days = Array.isArray(parsed.days) ? parsed.days : []
+    if (days.length < 5) return null
+    const sanitized = days.slice(0, 7).map(d => ({
+      tasks: (Array.isArray(d.tasks) ? d.tasks : [])
+        .filter(t => t && typeof t.title === 'string' && t.title.length > 3)
+        .slice(0, 3)
+        .map(t => ({
+          title: String(t.title).slice(0, 120),
+          subject: String(t.subject || input.subjects[0].name).slice(0, 80),
+          type: (['study', 'practice', 'test', 'revision'].includes(t.type)
+            ? t.type
+            : 'study') as StudyPlanTaskAI['type'],
+          priority: (['high', 'medium', 'low'].includes(t.priority)
+            ? t.priority
+            : 'medium') as StudyPlanTaskAI['priority'],
+          duration: Math.max(10, Math.min(180, Number(t.duration) || 45)),
+        })),
+    }))
+    if (sanitized.filter(d => d.tasks.length > 0).length < 5) return null
+    while (sanitized.length < 7) {
+      sanitized.push({ tasks: sanitized[sanitized.length % Math.max(1, sanitized.length)].tasks.slice(0, 1) })
+    }
+    return { days: sanitized }
+  } catch {
+    return null
   }
 }

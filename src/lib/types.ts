@@ -77,18 +77,14 @@ export interface Material {
 
 /* ---------- Material upload (AI pipeline) ---------- */
 
-export interface MaterialUploadResult {
+/**
+ * POST /api/materials/upload responds IMMEDIATELY with this — the heavy
+ * AI pipeline runs in the background and the client polls
+ * GET /api/materials until the material leaves `processing`.
+ */
+export interface MaterialUploadAccepted {
   material: Material
-  subject: { id: string; name: string; code: string }
-  created: {
-    units: number
-    topics: number
-    questions: number
-    experiments: number
-    isNewSubject: boolean
-  }
-  studyPlanGenerated: boolean
-  processingMethod: 'AI' | 'FALLBACK'
+  pipeline: 'background'
 }
 
 export type PYQType = 'Long Answer' | 'Short Answer' | 'Objective'

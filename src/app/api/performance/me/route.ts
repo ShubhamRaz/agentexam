@@ -6,8 +6,8 @@ import {
   overallAccuracy,
   computeTopicPerformance,
   round1,
-  WEAK_TOPIC_RECOMMENDATION,
 } from '@/app/api/lib/compute'
+import { db } from '@/lib/db'
 import type { PerformanceData } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -65,15 +65,36 @@ export async function GET(req: NextRequest) {
     score: t.score,
     status: t.status,
   }))
+
+  // material evidence per subject → grounded, actionable recommendations
+  const weakSubjectIds = Array.from(
+    new Set(topicRows.filter(t => t.status === 'weak').map(t => t.subjectId))
+  )
+  const materialCounts = new Map<string, number>()
+  if (weakSubjectIds.length) {
+    const groups = await db.material.groupBy({
+      by: ['subjectId'],
+      where: { subjectId: { in: weakSubjectIds } },
+      _count: { _all: true },
+    })
+    for (const g of groups) materialCounts.set(g.subjectId ?? '', g._count._all)
+  }
+
   const weakTopics = topicRows
     .filter(t => t.status === 'weak')
     .sort((a, b) => a.score - b.score)
-    .map(t => ({
-      topic: t.topic,
-      subject: t.subject,
-      score: t.score,
-      recommendation: WEAK_TOPIC_RECOMMENDATION,
-    }))
+    .map(t => {
+      const materials = materialCounts.get(t.subjectId) ?? 0
+      const materialHint = materials
+        ? `Re-read your ${materials} uploaded ${materials === 1 ? 'material' : 'materials'} on this topic, then`
+        : 'Upload notes for this topic and'
+      return {
+        topic: t.topic,
+        subject: t.subject,
+        score: t.score,
+        recommendation: `You scored ${t.score}% here. ${materialHint} drill a focused practice test — the AI question bank targets exactly this topic.`,
+      }
+    })
 
   const payload: PerformanceData = {
     overall: { totalTests, averageScore, improvement, accuracy, studyHours },

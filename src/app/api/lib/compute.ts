@@ -3,6 +3,7 @@
    Private folder (underscore) — excluded from Next.js routing.
    ============================================================ */
 import { db } from '@/lib/db'
+import { generateStudyPlanTasks } from '@/lib/ai'
 import type {
   Material,
   StudyPlanData,
@@ -61,8 +62,8 @@ interface MaterialWithSubject {
   processingStatus: string
   fileSize: number
   createdAt: Date
-  subjectId: string
-  subject: { name: string }
+  subjectId: string | null
+  subject: { name: string } | null
   uploadedBy?: string
   analysisSummary?: string | null
 }
@@ -83,7 +84,7 @@ export function mapMaterial(m: MaterialWithSubject, uploaderName?: string | null
         topics: Number(parsed.topics) || 0,
         questions: Number(parsed.questions) || 0,
         experiments: Number(parsed.experiments) || 0,
-        subjectName: String(parsed.subjectName || m.subject.name),
+        subjectName: String(parsed.subjectName || m.subject?.name || 'Pending analysis'),
         isNewSubject: !!parsed.isNewSubject,
       }
     } catch {
@@ -95,8 +96,8 @@ export function mapMaterial(m: MaterialWithSubject, uploaderName?: string | null
     name: m.title,
     type: (m.materialType || 'notes').toLowerCase() as Material['type'],
     status,
-    subject: m.subject.name,
-    subjectId: m.subjectId,
+    subject: m.subject?.name ?? 'Detecting subject…',
+    subjectId: m.subjectId ?? '',
     size: formatSize(m.fileSize),
     uploadDate: m.createdAt.toISOString(),
     ...(uploaderName ? { uploadedByName: uploaderName } : {}),
@@ -277,8 +278,18 @@ export function computeTopicPerformance(rows: AnswerRow[]): TopicRow[] {
   }
   return Array.from(map.values()).map(v => {
     const score = Math.round(v.ratioTotal / v.count)
+    // Weak detection must fire on EVIDENCE, not attempt count:
+    //  • score < 60 is weak even on a single attempt (0% after one miss IS weak)
+    //  • 60–74% needs 3+ attempts to be called weak (could be a one-off slip)
+    //  • ≥ 75% is strong
     const status: TopicRow['status'] =
-      v.count < 3 ? 'insufficient' : score >= 80 ? 'strong' : 'weak'
+      score >= 75
+        ? 'strong'
+        : score < 60
+          ? 'weak'
+          : v.count >= 3
+            ? 'weak'
+            : 'insufficient'
     return { topic: v.topic, subject: v.subject, subjectId: v.subjectId, score, attempts: v.count, status }
   })
 }
@@ -383,7 +394,8 @@ export async function getTodayTasks(userId: string): Promise<StudyPlanTask[]> {
 
 /**
  * Generate + persist a fresh 7-day ACTIVE study plan for the user.
- * Weak topics → high-priority practice (45m); other topics/subjects → study (60m).
+ * AI-first: the LLM plans around real topics, weak topics and material
+ * evidence; the deterministic template is only a fallback.
  * Archives any previous ACTIVE plan first.
  */
 export async function generateStudyPlan(userId: string): Promise<{
@@ -394,7 +406,89 @@ export async function generateStudyPlan(userId: string): Promise<{
 }> {
   const weakTopics = await computeWeakTopics(userId)
   const subjects = await getVisibleSubjects(userId)
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { examDate: true },
+  })
 
+  // ---------- AI attempt (grounded in topics + weak areas + materials) ----------
+  if (subjects.length > 0) {
+    const subjectIds = subjects.map(s => s.id)
+    const [topicRows, materialGroups] = await Promise.all([
+      db.topic.findMany({
+        where: { unit: { subjectId: { in: subjectIds } } },
+        select: { name: true, weightage: true, pyqFrequency: true, unit: { select: { subjectId: true } } },
+      }),
+      db.material.groupBy({
+        by: ['subjectId'],
+        where: { subjectId: { in: subjectIds } },
+        _count: { _all: true },
+      }),
+    ])
+    const materialCountBySubject = new Map(
+      materialGroups.map(g => [g.subjectId, g._count._all])
+    )
+    const hotBySubject = new Map<string, string[]>()
+    for (const s of subjects) {
+      hotBySubject.set(
+        s.id,
+        topicRows
+          .filter(t => t.unit.subjectId === s.id)
+          .sort((a, b) => b.weightage + b.pyqFrequency * 2 - (a.weightage + a.pyqFrequency * 2))
+          .slice(0, 10)
+          .map(t => t.name)
+      )
+    }
+    const ai = await generateStudyPlanTasks({
+      subjects: subjects.map(s => ({
+        name: s.name,
+        hotTopics: hotBySubject.get(s.id) ?? [],
+        materialCount: materialCountBySubject.get(s.id) ?? 0,
+      })),
+      weakTopics: weakTopics.map(w => ({ topic: w.topic, subject: w.subject, score: w.score })),
+      examDate: user?.examDate ? user.examDate.toISOString().slice(0, 10) : null,
+    })
+    if (ai) {
+      const start = new Date()
+      start.setHours(0, 0, 0, 0)
+      const days: PlanJson['days'] = ai.days.map((d, di) => {
+        const date = new Date(start)
+        date.setDate(date.getDate() + di)
+        const iso = localISO(date)
+        return {
+          date: iso,
+          tasks: d.tasks.map((t, ti) => ({
+            id: `task-${di * 3 + ti + 1}`,
+            title: t.title,
+            subject: t.subject,
+            type: t.type,
+            priority: t.priority,
+            duration: t.duration,
+            completed: false,
+            date: iso,
+          })),
+        }
+      })
+      const endDate = new Date(start)
+      endDate.setDate(endDate.getDate() + 6)
+      await db.studyPlan.updateMany({
+        where: { studentId: userId, status: 'ACTIVE' },
+        data: { status: 'ARCHIVED' },
+      })
+      const plan = await db.studyPlan.create({
+        data: {
+          studentId: userId,
+          startDate: start,
+          endDate,
+          planJson: JSON.stringify({ days }),
+          status: 'ACTIVE',
+        },
+      })
+      return plan
+    }
+  }
+
+  // ---------- deterministic fallback ----------
   const pool: Omit<PlanTaskJson, 'id' | 'completed' | 'date'>[] = []
 
   // weak-topic practice tasks first (highest priority in the plan)

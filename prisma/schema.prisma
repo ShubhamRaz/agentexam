@@ -82,7 +82,8 @@ model Topic {
 
 model Material {
   id               String   @id @default(uuid())
-  subjectId        String
+  subjectId        String? // null while the background AI pipeline detects the subject
+  filePath         String? // absolute path of the stored file (enables re-processing)
   uploadedBy       String
   materialType     String   // SYLLABUS | PYQ | NOTES | LAB_MANUAL
   title            String
@@ -90,11 +91,11 @@ model Material {
   fileType         String
   mimeType         String
   fileSize         Int
-  processingStatus String   @default("PROCESSED") // UPLOADED | PROCESSING | PROCESSED | FAILED
+  processingStatus String   @default("PROCESSING") // UPLOADED | PROCESSING | PROCESSED | FAILED
   extractedText    String? // text extracted from the file (input for AI analysis)
   analysisSummary String? // JSON {units,topics,questions,experiments} generated counts
   createdAt        DateTime @default(now())
-  subject          Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subject          Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 }
 
 model Question {

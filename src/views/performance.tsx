@@ -126,7 +126,7 @@ export function PerformanceView() {
                 />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} domain={[0, 100]} />
                 <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }} />
-                <Area type="monotone" dataKey="score" stroke="#7C3AED" strokeWidth={2.5} fill="url(#aeScoreGrad)" dot={false} />
+                <Area type="monotone" dataKey="score" stroke="#7C3AED" strokeWidth={2.5} fill="url(#aeScoreGrad)" dot={scoreTrend.length <= 6 ? { r: 3 } : false} activeDot={{ r: 4 }} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
@@ -154,7 +154,7 @@ export function PerformanceView() {
                 />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} domain={[0, 100]} />
                 <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }} />
-                <Area type="monotone" dataKey="accuracy" stroke="#10B981" strokeWidth={2.5} fill="url(#aeAccGrad)" dot={false} />
+                <Area type="monotone" dataKey="accuracy" stroke="#10B981" strokeWidth={2.5} fill="url(#aeAccGrad)" dot={accuracyTrend.length <= 6 ? { r: 3 } : false} activeDot={{ r: 4 }} />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
@@ -168,15 +168,52 @@ export function PerformanceView() {
             <CardTitle className="text-sm font-semibold text-slate-900">Subject Comparison</CardTitle>
           </CardHeader>
           <CardContent className="p-5 pt-4">
-            <ResponsiveContainer width="100%" height={280}>
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="#E2E8F0" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: '#0F172A', fontSize: 11 }} />
-                <Radar name="Score" dataKey="score" stroke="#7C3AED" fill="#7C3AED" fillOpacity={0.3} strokeWidth={2} />
-                <Radar name="Accuracy" dataKey="accuracy" stroke="#06B6D4" fill="#06B6D4" fillOpacity={0.2} strokeWidth={2} />
-                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }} />
-              </RadarChart>
-            </ResponsiveContainer>
+            {/* a radar needs 3+ axes — with fewer subjects, show score bars instead */}
+            {subjectPerformance.length < 3 ? (
+              subjectPerformance.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-500">
+                  No subject data yet — take a test to compare subjects.
+                </p>
+              ) : (
+                <div className="space-y-5">
+                  {subjectPerformance.map(s => {
+                    const accuracy = Math.round(s.accuracy * 10) / 10
+                    return (
+                      <div key={s.subject}>
+                        <div className="flex items-center justify-between gap-3">
+                          <p title={s.subject} className="min-w-0 truncate text-sm font-medium text-slate-800">
+                            {s.subject}
+                          </p>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <ScorePill score={s.score} />
+                            <span className="text-xs text-slate-500">· accuracy {accuracy}%</span>
+                          </div>
+                        </div>
+                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className={cn('h-full rounded-full transition-all', getScoreBarColor(s.score))}
+                            style={{ width: `${Math.max(2, Math.min(100, s.score))}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <p className="text-[11px] text-slate-400">
+                    The radar chart unlocks once you have 3+ subjects with test data.
+                  </p>
+                </div>
+              )
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <RadarChart data={radarData}>
+                  <PolarGrid stroke="#E2E8F0" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: '#0F172A', fontSize: 11 }} />
+                  <Radar name="Score" dataKey="score" stroke="#7C3AED" fill="#7C3AED" fillOpacity={0.3} strokeWidth={2} />
+                  <Radar name="Accuracy" dataKey="accuracy" stroke="#06B6D4" fill="#06B6D4" fillOpacity={0.2} strokeWidth={2} />
+                  <Tooltip contentStyle={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '12px' }} />
+                </RadarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -186,8 +223,8 @@ export function PerformanceView() {
               const status = TOPIC_STATUS_STYLES[tp.status] ?? TOPIC_STATUS_STYLES.insufficient
               return (
                 <div key={`${tp.subject}-${tp.topic}`} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3">
-                  <p className="w-40 min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{tp.topic}</p>
-                  <Badge variant="outline" className="max-w-32 truncate border-slate-200 bg-slate-50 text-[11px] text-slate-600">
+                  <p title={tp.topic} className="w-40 min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{tp.topic}</p>
+                  <Badge variant="outline" title={tp.subject} className="max-w-32 truncate border-slate-200 bg-slate-50 text-[11px] text-slate-600">
                     {tp.subject}
                   </Badge>
                   <div className="h-1.5 min-w-16 flex-[2] overflow-hidden rounded-full bg-slate-100">
@@ -216,10 +253,10 @@ export function PerformanceView() {
             {weakTopics.map(wt => (
               <div key={`${wt.subject}-${wt.topic}`} className="rounded-lg border-l-4 border-red-400 bg-red-50/50 p-4">
                 <div className="mb-2 flex items-start justify-between gap-3">
-                  <span className="text-sm font-semibold text-slate-900">{wt.topic}</span>
+                  <span title={wt.topic} className="min-w-0 text-sm font-semibold text-slate-900">{wt.topic}</span>
                   <ScorePill score={wt.score} />
                 </div>
-                <p className="mb-2 text-xs text-slate-500">{wt.subject}</p>
+                <p title={wt.subject} className="mb-2 text-xs text-slate-500">{wt.subject}</p>
                 <p className="text-sm leading-relaxed text-slate-600">💡 {wt.recommendation}</p>
               </div>
             ))}
