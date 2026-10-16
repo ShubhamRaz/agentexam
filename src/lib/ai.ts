@@ -24,6 +24,7 @@ async function chat(systemPrompt: string, userPrompt: string, maxTokens = 1024):
     try {
       const zai = await ZAI.create()
       const completion = await zai.chat.completions.create({
+        model: 'GLM-4.7-Flash',
         messages: [
           { role: 'assistant' as ChatRole, content: systemPrompt },
           { role: 'user' as ChatRole, content: userPrompt },
@@ -241,6 +242,7 @@ export async function readImageText(
     const dataUrl = `data:${mimeType || 'image/png'};base64,${buf.toString('base64')}`
     const zai = await ZAI.create()
     const completion = await zai.chat.completions.create({
+      model: 'GLM-4.6V-Flash',
       messages: [
         {
           role: 'user',

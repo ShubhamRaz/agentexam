@@ -55,3 +55,5 @@ server.log
 # app uploads + sqlite db — never watched by the dev server
 /upload/
 /db/
+# Z.ai SDK credentials — never commit
+.z-ai-config
