@@ -44,6 +44,43 @@ export async function DELETE(
   if (material.filePath) {
     await fs.unlink(material.filePath).catch(() => undefined)
   }
+
+  const deleteSubjectParam = req.nextUrl.searchParams.get('deleteSubject') === 'true'
+  if (deleteSubjectParam && material.subjectId) {
+    const subject = await db.subject.findUnique({
+      where: { id: material.subjectId },
+      include: { materials: { select: { filePath: true } } },
+    })
+    if (subject) {
+      for (const m of subject.materials) {
+        if (m.filePath) await fs.unlink(m.filePath).catch(() => undefined)
+      }
+      const tests = await db.mockTest.findMany({ where: { subjectId: subject.id }, select: { id: true } })
+      const testIds = tests.map(t => t.id)
+      if (testIds.length > 0) {
+        await db.result.deleteMany({ where: { testId: { in: testIds } } })
+        await db.answer.deleteMany({ where: { testId: { in: testIds } } })
+        await db.mockTest.deleteMany({ where: { id: { in: testIds } } })
+      }
+      const questions = await db.question.findMany({ where: { subjectId: subject.id }, select: { id: true } })
+      const questionIds = questions.map(q => q.id)
+      if (questionIds.length > 0) {
+        await db.answer.deleteMany({ where: { questionId: { in: questionIds } } })
+        await db.question.deleteMany({ where: { id: { in: questionIds } } })
+      }
+      const units = await db.unit.findMany({ where: { subjectId: subject.id }, select: { id: true } })
+      const unitIds = units.map(u => u.id)
+      if (unitIds.length > 0) {
+        await db.topic.deleteMany({ where: { unitId: { in: unitIds } } })
+        await db.unit.deleteMany({ where: { id: { in: unitIds } } })
+      }
+      await db.experiment.deleteMany({ where: { subjectId: subject.id } })
+      await db.material.deleteMany({ where: { subjectId: subject.id } })
+      await db.subject.delete({ where: { id: subject.id } })
+      return Response.json({ ok: true, deletedSubjectId: subject.id })
+    }
+  }
+
   await db.material.delete({ where: { id } })
 
   return Response.json({ ok: true })

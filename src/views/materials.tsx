@@ -60,6 +60,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -101,6 +102,9 @@ type CategoryId = MaterialType
 interface SubjectGroup {
   id: string
   name: string
+  code?: string
+  source?: 'own' | 'classroom'
+  classroomName?: string | null
   materials: Material[]
 }
 
@@ -382,11 +386,21 @@ function CategorySection({ categoryId, materials, reanalyzingId, onReanalyze, on
 
 /* ---------- subject card: name + count + category sections ---------- */
 
-function SubjectGroupCard({ group, reanalyzingId, onReanalyze, onDelete, className }: {
+function SubjectGroupCard({
+  group,
+  reanalyzingId,
+  onReanalyze,
+  onDeleteMaterial,
+  onDeleteSubject,
+  onUploadForSubject,
+  className,
+}: {
   group: SubjectGroup
   reanalyzingId: string | null
   onReanalyze: (mat: Material) => void
-  onDelete: (mat: Material) => void
+  onDeleteMaterial: (mat: Material) => void
+  onDeleteSubject: (group: SubjectGroup) => void
+  onUploadForSubject: (subjectId: string) => void
   className?: string
 }) {
   const byCategory: Record<CategoryId, Material[]> = {
@@ -405,29 +419,75 @@ function SubjectGroupCard({ group, reanalyzingId, onReanalyze, onDelete, classNa
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
               <BookOpen className="h-4 w-4" />
             </div>
-            <h3 title={group.name} className="truncate text-sm font-bold text-slate-900">
-              {group.name}
-            </h3>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 title={group.name} className="truncate text-sm font-bold text-slate-900">
+                  {group.name}
+                </h3>
+                {group.code && (
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-600">
+                    {group.code}
+                  </span>
+                )}
+                {group.source === 'classroom' && group.classroomName && (
+                  <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] font-medium text-violet-700">
+                    {group.classroomName}
+                  </Badge>
+                )}
+              </div>
+            </div>
           </div>
-          <Badge
-            variant="outline"
-            className="shrink-0 border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-600"
-          >
-            {fileCountLabel(group.materials.length)}
-          </Badge>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Badge
+              variant="outline"
+              className="border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-600"
+            >
+              {fileCountLabel(group.materials.length)}
+            </Badge>
+            {group.source !== 'classroom' && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                title={`Delete subject "${group.name}" and all generated questions`}
+                onClick={() => onDeleteSubject(group)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
-        <div className="space-y-5">
-          {CATEGORY_ORDER.filter(cat => byCategory[cat].length > 0).map(cat => (
-            <CategorySection
-              key={cat}
-              categoryId={cat}
-              materials={byCategory[cat]}
-              reanalyzingId={reanalyzingId}
-              onReanalyze={onReanalyze}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
+
+        {group.materials.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 py-7 px-4 text-center bg-slate-50/50">
+            <FolderOpen className="h-8 w-8 text-slate-300" />
+            <p className="mt-2 text-xs font-semibold text-slate-700">No materials attached</p>
+            <p className="mt-0.5 text-[11px] text-slate-400 max-w-sm">
+              Upload syllabus or notes to generate question bank and study plans for this subject.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 h-8 gap-1.5 text-xs font-medium text-violet-700 border-violet-200 hover:bg-violet-50"
+              onClick={() => onUploadForSubject(group.id)}
+            >
+              <Upload className="h-3.5 w-3.5" /> Upload materials
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {CATEGORY_ORDER.filter(cat => byCategory[cat].length > 0).map(cat => (
+              <CategorySection
+                key={cat}
+                categoryId={cat}
+                materials={byCategory[cat]}
+                reanalyzingId={reanalyzingId}
+                onReanalyze={onReanalyze}
+                onDelete={onDeleteMaterial}
+              />
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -498,7 +558,11 @@ export function MaterialsView() {
   const [creating, setCreating] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null)
+  const [alsoDeleteSubject, setAlsoDeleteSubject] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const [deleteSubjectTarget, setDeleteSubjectTarget] = useState<SubjectGroup | null>(null)
+  const [deletingSubject, setDeletingSubject] = useState(false)
   const [reanalyzingId, setReanalyzingId] = useState<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -726,17 +790,62 @@ export function MaterialsView() {
     }
   }
 
-  /* ---------- delete (with confirm) ---------- */
+  /* ---------- delete subject (with confirm) ---------- */
+
+  const confirmDeleteSubject = async () => {
+    if (!deleteSubjectTarget) return
+    setDeletingSubject(true)
+    try {
+      await apiDelete(`/subjects/${deleteSubjectTarget.id}`)
+      setSubjects(prev => prev.filter(s => s.id !== deleteSubjectTarget.id))
+      applyMaterials(prevMaterialsRef.current.filter(m => m.subjectId !== deleteSubjectTarget.id))
+      setUploadQueue(q =>
+        q.filter(u => {
+          const mat = materials.find(m => m.id === u.materialId)
+          return mat ? mat.subjectId !== deleteSubjectTarget.id : true
+        })
+      )
+      if (selectedSubject === deleteSubjectTarget.id) {
+        setSelectedSubject(AUTO_SUBJECT)
+      }
+      toast.success(`Subject "${deleteSubjectTarget.name}" and all questions deleted`)
+      setDeleteSubjectTarget(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete subject')
+    } finally {
+      setDeletingSubject(false)
+    }
+  }
+
+  /* ---------- delete material (with confirm) ---------- */
+
+  const handleDeleteMaterialClick = (mat: Material) => {
+    setDeleteTarget(mat)
+    const count = materials.filter(m => m.subjectId === mat.subjectId).length
+    setAlsoDeleteSubject(count <= 1)
+  }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      await apiDelete(`/materials/${deleteTarget.id}`)
-      applyMaterials(prevMaterialsRef.current.filter(m => m.id !== deleteTarget.id))
-      setUploadQueue(q => q.filter(u => u.materialId !== deleteTarget.id))
-      toast.success(`"${deleteTarget.name}" deleted`)
+      if (alsoDeleteSubject && deleteTarget.subjectId) {
+        await apiDelete(`/subjects/${deleteTarget.subjectId}`)
+        setSubjects(prev => prev.filter(s => s.id !== deleteTarget.subjectId))
+        applyMaterials(prevMaterialsRef.current.filter(m => m.subjectId !== deleteTarget.subjectId))
+        if (selectedSubject === deleteTarget.subjectId) {
+          setSelectedSubject(AUTO_SUBJECT)
+        }
+        toast.success(`Deleted file and subject "${deleteTarget.subject}"`)
+      } else {
+        await apiDelete(`/materials/${deleteTarget.id}`)
+        applyMaterials(prevMaterialsRef.current.filter(m => m.id !== deleteTarget.id))
+        setUploadQueue(q => q.filter(u => u.materialId !== deleteTarget.id))
+        toast.success(`"${deleteTarget.name}" deleted`)
+        void refreshSubjects()
+      }
       setDeleteTarget(null)
+      setAlsoDeleteSubject(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete material')
     } finally {
@@ -797,15 +906,50 @@ export function MaterialsView() {
     if (!m.subjectId) continue
     let group = groupIndex.get(m.subjectId)
     if (!group) {
+      const sub = subjects.find(s => s.id === m.subjectId)
       group = {
         id: m.subjectId,
-        name: subjects.find(s => s.id === m.subjectId)?.name ?? m.subject,
+        name: sub?.name ?? m.subject,
+        code: sub?.code,
+        source: sub?.source,
+        classroomName: sub?.classroomName,
         materials: [],
       }
       groupIndex.set(m.subjectId, group)
       subjectGroups.push(group)
     }
     group.materials.push(m)
+  }
+
+  // Also include all visible subjects that have 0 materials currently
+  for (const s of subjects) {
+    if (!groupIndex.has(s.id)) {
+      if (searchLower && !s.name.toLowerCase().includes(searchLower)) continue
+      const emptyGroup: SubjectGroup = {
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        source: s.source,
+        classroomName: s.classroomName,
+        materials: [],
+      }
+      groupIndex.set(s.id, emptyGroup)
+      subjectGroups.push(emptyGroup)
+    }
+  }
+
+  const deleteTargetSubject = deleteTarget?.subjectId
+    ? subjects.find(s => s.id === deleteTarget.subjectId)
+    : null
+  const deleteTargetSubjectMats = deleteTarget?.subjectId
+    ? materials.filter(m => m.subjectId === deleteTarget.subjectId)
+    : []
+  const isOnlyMaterial = deleteTargetSubjectMats.length <= 1
+
+  const handleUploadForSubject = (subjectId: string) => {
+    setSelectedSubject(subjectId)
+    toast.info('Subject selected. Drop your file in the upload zone above.')
+    fileInputRef.current?.click()
   }
 
   const anyUploading = uploadQueue.some(u => u.status === 'uploading' || u.status === 'queued')
@@ -1048,7 +1192,7 @@ export function MaterialsView() {
                 materials={detecting}
                 reanalyzingId={reanalyzingId}
                 onReanalyze={mat => void reanalyze(mat)}
-                onDelete={setDeleteTarget}
+                onDelete={handleDeleteMaterialClick}
               />
             )}
             {subjectGroups.map((group, i) => (
@@ -1058,10 +1202,12 @@ export function MaterialsView() {
                 className={STAGGER[i % STAGGER.length]}
                 reanalyzingId={reanalyzingId}
                 onReanalyze={mat => void reanalyze(mat)}
-                onDelete={setDeleteTarget}
+                onDeleteMaterial={handleDeleteMaterialClick}
+                onDeleteSubject={setDeleteSubjectTarget}
+                onUploadForSubject={handleUploadForSubject}
               />
             ))}
-            {visibleMats.length === 0 && (
+            {subjectGroups.length === 0 && detecting.length === 0 && (
               <EmptyState
                 icon={FolderOpen}
                 title={search.trim() ? 'No materials match your search' : 'No materials yet'}
@@ -1127,15 +1273,39 @@ export function MaterialsView() {
       <AlertDialog
         open={deleteTarget !== null}
         onOpenChange={open => {
-          if (!open) setDeleteTarget(null)
+          if (!open) {
+            setDeleteTarget(null)
+            setAlsoDeleteSubject(false)
+          }
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this material?</AlertDialogTitle>
-            <AlertDialogDescription>
-              &quot;{deleteTarget?.name}&quot; and its stored file will be removed. Generated units,
-              topics and questions stay in your subject.
+            <AlertDialogDescription className="space-y-3 text-xs">
+              <span className="block text-slate-600">
+                &quot;{deleteTarget?.name}&quot; and its stored file will be permanently removed.
+              </span>
+              {isOnlyMaterial && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-xs text-amber-900 space-y-2">
+                  <p className="font-semibold text-amber-800">
+                    ⚠️ This is the only material for &quot;{deleteTargetSubject?.name ?? deleteTarget?.subject}&quot;.
+                  </p>
+                  <label className="flex items-start gap-2.5 cursor-pointer text-slate-800 pt-1">
+                    <Checkbox
+                      checked={alsoDeleteSubject}
+                      onCheckedChange={checked => setAlsoDeleteSubject(!!checked)}
+                      className="mt-0.5 border-amber-400 data-[state=checked]:bg-amber-600 data-[state=checked]:border-amber-600"
+                    />
+                    <div className="space-y-0.5 leading-snug">
+                      <span className="font-semibold text-xs">Also delete subject and all questions from exams</span>
+                      <p className="text-[11px] text-slate-500 font-normal">
+                        Removes this subject from Theory Exam, Practical Exam, PYQ Analysis, and Syllabus Analysis.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1144,12 +1314,54 @@ export function MaterialsView() {
               className="bg-red-600 text-white hover:bg-red-700"
               disabled={deleting}
               onClick={e => {
-                e.preventDefault() // keep the dialog open until the request settles
+                e.preventDefault()
                 void confirmDelete()
               }}
             >
-              {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {deleting ? 'Deleting…' : 'Delete'}
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {deleting
+                ? 'Deleting…'
+                : alsoDeleteSubject
+                  ? 'Delete File & Subject'
+                  : 'Delete File'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete subject confirmation */}
+      <AlertDialog
+        open={deleteSubjectTarget !== null}
+        onOpenChange={open => {
+          if (!open) setDeleteSubjectTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete subject &quot;{deleteSubjectTarget?.name}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 text-xs">
+              <span className="block text-slate-600">
+                This will permanently delete <strong>{deleteSubjectTarget?.name}</strong> along with all
+                its uploaded materials ({deleteSubjectTarget?.materials.length || 0} files), generated
+                units, topics, question bank, and exam records.
+              </span>
+              <span className="block font-medium text-red-600">
+                This subject will be completely removed everywhere: Exams, PYQ Analysis, and Syllabus Analysis.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingSubject}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white hover:bg-red-700"
+              disabled={deletingSubject}
+              onClick={e => {
+                e.preventDefault()
+                void confirmDeleteSubject()
+              }}
+            >
+              {deletingSubject && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {deletingSubject ? 'Deleting Subject…' : 'Delete Subject'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
