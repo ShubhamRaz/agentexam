@@ -15,6 +15,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+async function getZAI(): Promise<ZAI> {
+  const apiKey = process.env.Z_AI_API || process.env.ZHIPUAI_API_KEY
+  const baseUrl = process.env.Z_AI_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4'
+  if (apiKey) {
+    const ZAIConstructor = ZAI as unknown as new (config: { baseUrl: string; apiKey: string }) => ZAI
+    return new ZAIConstructor({ baseUrl, apiKey })
+  }
+  return await ZAI.create()
+}
+
 /** Chat with retry + backoff — the SDK rate-limits (429) when several
  *  pipeline stages run close together, so transient failures retry twice. */
 async function chat(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
@@ -22,7 +32,7 @@ async function chat(systemPrompt: string, userPrompt: string, maxTokens = 1024):
   let lastError: unknown = null
   for (let i = 0; i < attempts; i++) {
     try {
-      const zai = await ZAI.create()
+      const zai = await getZAI()
       const completion = await zai.chat.completions.create({
         model: 'GLM-4.7-Flash',
         messages: [
@@ -240,7 +250,7 @@ export async function readImageText(
   try {
     const buf = await fs.readFile(imagePath)
     const dataUrl = `data:${mimeType || 'image/png'};base64,${buf.toString('base64')}`
-    const zai = await ZAI.create()
+    const zai = await getZAI()
     const completion = await zai.chat.completions.create({
       model: 'GLM-4.6V-Flash',
       messages: [
